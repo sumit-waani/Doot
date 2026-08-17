@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Write comprehensive tests for the template renderer covering all template features: element rendering, expression output (escaped/raw), inheritance, partials, control flow, auto-escaping, style-embed, doctype, HTMX injection, and end-to-end integration with the Phase 3 render call.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create tests/test_templates.nim with import of unittest, renderer, lexer, parser, ast, response modules",
     "Suite: 'Renderer - Element Rendering' - test basic tags (div, p, h1), class shorthand (div.post-card, div.card.highlighted), ID shorthand (input#email), combined class+ID (div#sidebar.panel.dark), attributes (a href=\"/posts\" \"All Posts\"), void elements (img, input, br, hr, meta, link), HTMX attributes (button hx-post=\"/vote\" hx-target=\"#count\" \"Vote\")",
@@ -29,5 +29,5 @@
     "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim && nim c -r tests/test_parser.nim && nim c -r tests/test_integration.nim && nim c -r tests/test_schema.nim && nim c -r tests/test_query.nim && nim c -r tests/test_migrations.nim && nim c --threads:on --mm:orc -r tests/test_router.nim && nim c --threads:on --mm:orc -r tests/test_http_integration.nim && nim c --threads:on --mm:orc -r tests/test_server_e2e.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "Fixed deep inheritance bug in renderer.nim - child blocks were not propagated through multi-level extends chains. Added 4 lines to resolveInheritance to merge ctx.blocks (from outer caller) into childBlocks before loading the parent layout. All 96 template tests pass. All 373 existing tests still pass. test_templates.nim added to doot.nimble test task."
 }
