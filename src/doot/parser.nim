@@ -1,7 +1,7 @@
 ## Parser for the Doot DSL compiler.
 ## Transforms a token sequence into an AST.
 
-import lexer
+import tokens
 import ast
 
 proc parse*(tokens: seq[Token]): Node =

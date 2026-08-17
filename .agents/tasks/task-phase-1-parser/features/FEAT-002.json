@@ -2,7 +2,7 @@
   "id": "FEAT-002",
   "type": "feat",
   "description": "Implement the complete lexer/tokenizer with whitespace sensitivity, three parse modes (route/schema, template, native), string interpolation, position tracking, and all token types defined in the spec.",
-  "status": "pending",
+  "status": "in_progress",
   "steps": [
     "Create src/doot/tokens.nim defining all token types as an enum: keywords (route, schema, table, field, group, do, end, if, else, each, in, config, mount, native, render, redirect, job, schedule, auth, extends, block, partial), HTTP methods (GET, POST, PUT, DELETE, PATCH), types (TypeString, TypeText, TypeInteger, TypeBoolean, TypeFloat, TypeDatetime), literals (StringLit, IntLit, BoolTrue, BoolFalse, NilLit), operators (Assign, Eq, NotEq, Gt, Lt, GtEq, LtEq, And, Or, Not), delimiters (LParen, RParen, LBracket, RBracket, Comma, Colon, Pipe, InterpolStart, InterpolEnd), structural (Identifier, Indent, Dedent, Newline, EOF). Each Token should carry: kind, value (string), file (string), line (int), column (int).",
     "Create src/doot/lexer.nim implementing a Lexer type with fields: source (string), filename (string), pos (int), line (int), col (int), mode (enum: RouteSchema, Template, Native), indentStack (seq[int]), tokens (seq[Token]), errors (seq[string]).",
