@@ -32,3 +32,4 @@ task test, "Run the test suite":
   exec "nim c -r tests/test_templates.nim"
   exec "nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_auth.nim"
   exec "nim c --threads:on --mm:orc -r tests/test_jobs.nim"
+  exec "nim c -r tests/test_cli.nim"

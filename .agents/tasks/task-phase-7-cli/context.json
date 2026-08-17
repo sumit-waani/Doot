@@ -1,0 +1,31 @@
+{
+  "project_type": "Nim DSL compiler and web framework (Doot)",
+  "language": "Nim 2.2.10",
+  "build_system": "nimble with nim.cfg (--threads:on --mm:orc, db_connector path). Binary target named 'doot'.",
+  "test_framework": "Nim stdlib unittest module. Test files in tests/ directory named test_*.nim. Each compiled separately with nim c -r.",
+  "build_command": "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim",
+  "test_command": "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_cli.nim",
+  "verification_instructions": "1. Compile src/doot.nim successfully. 2. Run tests/test_cli.nim and confirm all tests pass. 3. Verify that 'doot new testapp' creates the expected directory structure. 4. Verify 'doot help' outputs command list.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "export PATH=/root/.nimble/bin:$PATH - Nim 2.2.10 is installed via choosenim at /root/.nimble/bin",
+  "environment_constraints": "Nim available at /root/.nimble/bin. No Docker. OPEN_INTERNET network. Libraries available: std lib only (no mummy). db_connector bundled with Nim at /root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src. argon2 and openssl C libs available for linking.",
+  "contribution_requirements": "Follow existing code patterns. Comprehensive unit tests. Phase exit criteria must all pass.",
+  "key_patterns": "Each module is a single .nim file in src/doot/. Types defined at top, procs below. Tests use unittest suites. Exported procs marked with *. Modules import from same directory (e.g., 'import ast' not 'import ../doot/ast'). Parser uses parseWithErrors returning (ast, errors). Token constructors via newToken. Schema changes detected via migration_diff.diffSchema comparing current schema AST to loadSnapshot result.",
+  "relevant_files": [
+    "src/doot.nim",
+    "src/doot/tokens.nim",
+    "src/doot/lexer.nim",
+    "src/doot/parser.nim",
+    "src/doot/ast.nim",
+    "src/doot/migration_diff.nim",
+    "src/doot/migration_gen.nim",
+    "src/doot/schema_snapshot.nim",
+    "doot.nimble",
+    "nim.cfg",
+    "docs/cli.md",
+    "examples/blog/app.do",
+    "examples/blog/views/layouts/base.do",
+    "tests/test_jobs.nim"
+  ],
+  "directory_structure": "src/doot.nim is the main entry point (binary). src/doot/ contains all modules. tests/ contains test files. examples/blog/ is the reference project. docs/ has specs."
+}

@@ -1,0 +1,36 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Implement the CLI module (src/doot/cli.nim) with argument parsing and command dispatch, the scaffolding module (src/doot/scaffold.nim) for 'doot new <name>', the help module, and the file watcher (src/doot/watcher.nim) with poll-based file monitoring. Update src/doot.nim to be the CLI dispatcher entry point. Write comprehensive tests in tests/test_cli.nim.",
+  "status": "completed",
+  "steps": [
+    "Create src/doot/cli.nim - CLI argument parser and command dispatcher. Parse argv into (command, args) tuples. Supported commands: 'new', 'dev', 'help', '--prod'. On invalid command or no args, show help. Return exit code 0 on success, 1 on compile error, 2 on invalid command.",
+    "Create src/doot/scaffold.nim - Project scaffolding for 'doot new <name>'. Validate name: alphanumeric + hyphens only, no spaces, no leading/trailing hyphens, not empty. Create directory structure: app.do (minimal config+schema), views/layouts/base.do (base layout), static/app.css (starter stylesheet), migrations/ (empty dir), .env (with SESSION_SECRET=<generated-random-hex>), .env.example (template showing required vars), .gitignore (ignoring .env, .doot-build/, uploads/, *.db). Generate a random session secret (32-byte hex string using std/sysrand). Print next-steps welcome message after scaffolding.",
+    "Create src/doot/watcher.nim - Poll-based file watcher. Monitor specified directories/patterns for file changes. Use os.getFileInfo (mtime) to detect modifications. Track file modification times in a table. On startup, scan all monitored paths and record baseline mtimes. On each poll cycle, compare current mtimes to recorded ones. Detect: new files, modified files, deleted files. Debounce: 150ms delay after last detected change before triggering callback. Configurable poll interval (default 500ms). Watch patterns: *.do files recursively, .env file. Exclude: .git/, .doot-build/, migrations/, uploads/, static/.",
+    "Create src/doot/dev_server.nim - Dev server orchestrator for 'doot dev'. Manages the compile-restart cycle. On startup: parse all .do files, detect schema changes (using migration_diff), generate migrations if needed (using migration_gen), output server URL. On file change (from watcher): stop running server process (if any), re-parse, re-check schema, recompile, restart. Handle compile errors: display error clearly, do not crash, wait for next file change. Handle schema changes: detect additive vs destructive. Additive: auto-apply. Destructive: prompt for confirmation in terminal. Graceful shutdown on SIGINT (Ctrl+C). Store build artifacts in .doot-build/ directory.",
+    "Create src/doot/error_format.nim - Error formatting for dev mode output. Format parse errors with file, line, column, code snippet, and suggestion. Format with terminal colors (ANSI escape codes) when stdout is a terminal. Show caret pointing to error column. Include 'Did you mean?' suggestions when available from parser errors.",
+    "Update src/doot.nim - Replace placeholder with CLI dispatcher. Import cli module. Call parseArgs and dispatch to appropriate command handler (scaffold for 'new', devServer for 'dev', showHelp for 'help'). Set process exit code appropriately.",
+    "Create tests/test_cli.nim - Comprehensive tests covering: project name validation (valid names, invalid names with spaces/special chars/leading hyphens), .env generation (session_secret is generated, is 64 hex chars), .gitignore content (contains .env, .doot-build/, uploads/, *.db), app.do scaffold content (has config block with port 3000, has schema block), base.do layout content (has doctype, html, head, body, block content), help output (contains 'new', 'dev', 'help' commands), CLI argument parsing (recognizes commands, handles unknown commands), file watcher change detection (detects new/modified/deleted files), error formatting (parse errors display file/line/column correctly).",
+    "Update doot.nimble - Add test_cli.nim to the test task."
+  ],
+  "acceptance_criteria": [
+    "'doot new myapp' creates directory with app.do, views/layouts/base.do, static/app.css, migrations/, .env, .env.example, .gitignore",
+    "Project name validation rejects names with spaces, special characters, leading/trailing hyphens",
+    ".env file contains a SESSION_SECRET with a random 64-character hex value",
+    ".gitignore contains .env, .doot-build/, uploads/, *.db",
+    "app.do scaffold has config block with port 3000 and schema block",
+    "views/layouts/base.do has standard HTML5 layout with block content",
+    "'doot help' shows available commands (new, dev, help) with descriptions",
+    "File watcher detects file modifications by comparing mtimes",
+    "File watcher debounces rapid changes (only triggers callback once)",
+    "Error formatter shows file, line, column for parse errors",
+    "All tests in tests/test_cli.nim pass",
+    "src/doot.nim compiles successfully as the CLI entry point"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_cli.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "All 67 tests pass. Build compiles cleanly. The doot binary now dispatches CLI commands. Project name validation rejects underscores (spec says alphanumeric+hyphens only). The dev_server module is structured to handle the full parse-schema-diff cycle but does not yet compile/run a generated Nim server since codegen pipeline is not yet implemented end-to-end. SIGINT handling uses a module-level pointer variable since Nim noconv procs cannot capture local variables. Review fixes applied: (1) static/ removed from excludeDirs and .css/.js/.html added to watchPatterns, (2) DevServer.running field enables clean loop exit from shutdownDevServer, (3) gDevServer made unexported with safety comment, (4) cpuTime replaced with getMonoTime for wall-clock accuracy."
+}
