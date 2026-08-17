@@ -13,6 +13,9 @@ backend       = "c"
 requires "nim >= 2.0.0"
 # db_connector is bundled with the Nim toolchain at the system level.
 # The nim.cfg provides the path, so no nimble dependency is needed.
+# mummy HTTP library could not be installed (repository not accessible).
+# Using std/asynchttpserver (stdlib) as fallback HTTP server.
+# requires "mummy >= 0.4.0"  # Fallback: std/asynchttpserver used instead
 
 # Tasks
 
