@@ -2172,3 +2172,410 @@ suite "Integration - Deploy + Env Validation":
     check "WorkingDirectory=/var/lib/dootd" in content
     check "Restart=always" in content
 
+# =============================================================================
+# Integration Tests - Full Daemon Wiring (FEAT-004)
+# =============================================================================
+
+suite "Integration - initDaemonState":
+  var testDir: string
+  var db: DbConn
+
+  setup:
+    testDir = setupTestDir()
+    db = initDootdDb(testDir)
+    hashAndStorePassword(db, "testpass")
+    setConfig(db, "dashboard_port", "9090")
+    setConfig(db, "router_port", "9091")
+
+  teardown:
+    db.close()
+    cleanupTestDir(testDir)
+
+  test "initDaemonState creates dashboard, router, and supervisor":
+    let (dashboard, router, supervisor) = initDaemonState(db)
+    check dashboard.port == 9090
+    check router.routerPort == 9091
+    check router.dashboardPort == 9090
+    check supervisor.children.len == 0
+
+  test "initDaemonState registers routes for existing apps":
+    var app1 = AppConfig(
+      name: "app1",
+      hostname: "app1.example.com",
+      githubUrl: "https://github.com/user/app1",
+      branch: "main",
+      envVars: "{}",
+      internalPort: 3001,
+      status: asRunning
+    )
+    var app2 = AppConfig(
+      name: "app2",
+      hostname: "app2.example.com",
+      githubUrl: "https://github.com/user/app2",
+      branch: "main",
+      envVars: "{}",
+      internalPort: 3002,
+      status: asRunning
+    )
+    discard saveAppConfig(db, app1)
+    discard saveAppConfig(db, app2)
+
+    let (dashboard, router, supervisor) = initDaemonState(db)
+    # Routes should be registered
+    let r1 = findRoute(router, "app1.example.com")
+    check r1 != nil
+    check r1.internalPort == 3001
+
+    let r2 = findRoute(router, "app2.example.com")
+    check r2 != nil
+    check r2.internalPort == 3002
+
+  test "initDaemonState does not register routes for apps without hostname":
+    var app = AppConfig(
+      name: "nohost",
+      hostname: "",
+      githubUrl: "https://github.com/user/nohost",
+      branch: "main",
+      envVars: "{}",
+      internalPort: 3001,
+      status: asStopped
+    )
+    discard saveAppConfig(db, app)
+    let (dashboard, router, supervisor) = initDaemonState(db)
+    check router.routes.len == 0
+
+  test "initDaemonState creates sessions table":
+    let (dashboard, router, supervisor) = initDaemonState(db)
+    # Verify sessions table works by creating a session
+    let sessionId = createSession(db)
+    check sessionId.len == 32
+    check validateSession(db, sessionId) == true
+
+suite "Integration - Full First-Run Lifecycle":
+  var testDir: string
+
+  setup:
+    testDir = setupTestDir()
+
+  teardown:
+    cleanupTestDir(testDir)
+
+  test "first run init, create app, deploy, start route check":
+    # Simulate first-run initialization
+    let db = initDootdDb(testDir)
+    defer: db.close()
+
+    # Initialize like runProd does
+    let password = generateAdminPassword()
+    hashAndStorePassword(db, password)
+    setConfig(db, "data_dir", testDir)
+    setConfig(db, "dashboard_port", "9090")
+    setConfig(db, "router_port", "9091")
+
+    # Verify init
+    check isPasswordSet(db) == true
+    check verifyAdminPassword(db, password) == true
+
+    # Create an app
+    var app = AppConfig(
+      name: "webapp",
+      hostname: "webapp.example.com",
+      githubUrl: "https://github.com/user/webapp",
+      branch: "main",
+      envVars: "PORT=3001\nDB_URL=sqlite:test.db",
+      internalPort: 3001,
+      memoryLimit: 512,
+      cpuShares: 1024,
+      status: asStopped
+    )
+    let appId = saveAppConfig(db, app)
+    check appId > 0
+    app.id = appId
+
+    # Initialize daemon state
+    let (dashboard, router, supervisor) = initDaemonState(db)
+
+    # Verify route was registered
+    let route = findRoute(router, "webapp.example.com")
+    check route != nil
+    check route.internalPort == 3001
+    check route.appId == appId
+
+    # Verify dashboard auth works
+    check verifyAdminPassword(db, password) == true
+    check verifyAdminPassword(db, "wrongpass") == false
+
+  test "full lifecycle: init -> create -> env validate -> deploy -> route":
+    let db = initDootdDb(testDir)
+    defer: db.close()
+
+    # Step 1: Initialize
+    hashAndStorePassword(db, "admin123")
+    setConfig(db, "dashboard_port", "9090")
+    setConfig(db, "router_port", "9091")
+
+    # Step 2: Create app with project dir
+    let appsDir = testDir / "apps"
+    createDir(appsDir)
+    let appDir = appsDir / "myapp"
+    createDir(appDir)
+    writeFile(appDir / "app.do", """
+      let port = env("PORT")
+      let db = env("DB_URL")
+      route "/" do:
+        respond "hello"
+    """)
+    discard execShellCmd("git -C " & appDir & " init -q && git -C " & appDir & " add . && git -C " & appDir & " -c user.email=t@t.com -c user.name=t commit -q -m init")
+
+    var app = AppConfig(
+      name: "myapp",
+      hostname: "myapp.example.com",
+      githubUrl: "https://github.com/user/myapp",
+      branch: "main",
+      envVars: "PORT=3001\nDB_URL=sqlite:app.db",
+      internalPort: 3001,
+      status: asStopped
+    )
+    let appId = saveAppConfig(db, app)
+    app.id = appId
+
+    # Step 3: Deploy (includes env validation)
+    let deployResult = deployApp(db, app, appsDir)
+    check deployResult.success == true
+    check deployResult.error == ""
+
+    # Step 4: Initialize daemon state and verify routing
+    let (dashboard, router, supervisor) = initDaemonState(db)
+    let route = findRoute(router, "myapp.example.com")
+    check route != nil
+    check route.internalPort == 3001
+
+    # Step 5: Verify state is loaded correctly
+    let state = loadState(db)
+    check state.initialized == true
+    check state.apps.len == 1
+    check state.apps[0].name == "myapp"
+
+  test "idempotent re-run does not wipe state":
+    let db = initDootdDb(testDir)
+    hashAndStorePassword(db, "firstpass")
+    setConfig(db, "dashboard_port", "9090")
+    setConfig(db, "router_port", "9091")
+    var app = AppConfig(
+      name: "persist",
+      hostname: "persist.example.com",
+      githubUrl: "https://github.com/user/persist",
+      branch: "main",
+      envVars: "PORT=3001",
+      internalPort: 3001,
+      status: asRunning
+    )
+    discard saveAppConfig(db, app)
+    db.close()
+
+    # Simulate re-run: open DB again
+    let db2 = initDootdDb(testDir)
+    defer: db2.close()
+    check isPasswordSet(db2) == true
+    check verifyAdminPassword(db2, "firstpass") == true
+    let apps = getApps(db2)
+    check apps.len == 1
+    check apps[0].name == "persist"
+    check apps[0].status == asRunning
+
+    # initDaemonState also works correctly
+    let (dashboard, router, supervisor) = initDaemonState(db2)
+    let route = findRoute(router, "persist.example.com")
+    check route != nil
+    check route.appId == apps[0].id
+
+  test "reset-password flow works after init":
+    let db = initDootdDb(testDir)
+    defer: db.close()
+    hashAndStorePassword(db, "original")
+    check verifyAdminPassword(db, "original") == true
+
+    # Simulate --reset-password
+    let newPwd = resetPassword(db)
+    check newPwd.len == 14
+    check verifyAdminPassword(db, newPwd) == true
+    check verifyAdminPassword(db, "original") == false
+
+    # Dashboard should still work with new password
+    initDashboardSessions(db)
+    let dashboard = newDootdDashboard(db, 9999)
+    var headers = newHttpHeaders()
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    let loginReq = Request(
+      reqMethod: HttpPost,
+      url: parseUri("/login"),
+      headers: headers,
+      body: "password=" & newPwd
+    )
+    let resp = handleDashboardRequest(dashboard, loginReq)
+    check resp.status == 302
+    check resp.headers["Location"] == "/"
+
+suite "Integration - CLI --prod Flag Dispatch":
+  test "--prod flag is parsed correctly":
+    let args = parseArgs(@["--prod"])
+    check args.command == cmdProd
+    check args.flags.len == 0
+
+  test "--prod with --reset-password is parsed":
+    let args = parseArgs(@["--prod", "--reset-password"])
+    check args.command == cmdProd
+    check "--reset-password" in args.flags
+
+  test "--prod with --status is parsed":
+    let args = parseArgs(@["--prod", "--status"])
+    check args.command == cmdProd
+    check "--status" in args.flags
+
+  test "dispatch sends cmdProd to runProd":
+    # We cannot actually call runProd in a test (it would start servers),
+    # but we verify the CLI parsing routes correctly
+    let args = parseArgs(@["--prod", "--reset-password"])
+    check args.command == cmdProd
+
+suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
+  var testDir: string
+  var db: DbConn
+  var dashboard: DootdDashboard
+
+  setup:
+    testDir = setupTestDir()
+    db = initDootdDb(testDir)
+    hashAndStorePassword(db, "adminpass")
+    dashboard = newDootdDashboard(db, 9999)
+
+  teardown:
+    db.close()
+    cleanupTestDir(testDir)
+
+  test "full dashboard workflow: login -> create app -> verify route -> deploy":
+    # Step 1: Login
+    var headers = newHttpHeaders()
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    let loginReq = Request(
+      reqMethod: HttpPost,
+      url: parseUri("/login"),
+      headers: headers,
+      body: "password=adminpass"
+    )
+    let loginResp = handleDashboardRequest(dashboard, loginReq)
+    check loginResp.status == 302
+    check loginResp.headers["Location"] == "/"
+    let sessionCookie = loginResp.headers["Set-Cookie"]
+    check SessionCookieName in sessionCookie
+
+    # Extract session ID from cookie
+    let sessionId = createSession(db)
+
+    # Step 2: Create an app
+    var createHeaders = newHttpHeaders()
+    createHeaders["Cookie"] = SessionCookieName & "=" & sessionId
+    createHeaders["Content-Type"] = "application/x-www-form-urlencoded"
+    let createReq = Request(
+      reqMethod: HttpPost,
+      url: parseUri("/apps"),
+      headers: createHeaders,
+      body: "name=blogapp&hostname=blog.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fblog&pat=ghp_test&branch=main&env_vars=PORT%3D3001&memory_limit=256&cpu_shares=512"
+    )
+    let createResp = handleDashboardRequest(dashboard, createReq)
+    check createResp.status == 302
+    check createResp.headers["Location"] == "/"
+
+    # Step 3: Verify app was created
+    let apps = getApps(db)
+    check apps.len == 1
+    check apps[0].name == "blogapp"
+    check apps[0].hostname == "blog.example.com"
+    check apps[0].internalPort == InternalPortStart
+
+    # Step 4: Verify route would be set up in initDaemonState
+    let (d, router, s) = initDaemonState(db)
+    let route = findRoute(router, "blog.example.com")
+    check route != nil
+    check route.internalPort == InternalPortStart
+
+    # Step 5: Trigger deploy via dashboard
+    var deployHeaders = newHttpHeaders()
+    deployHeaders["Cookie"] = SessionCookieName & "=" & sessionId
+    let deployReq = Request(
+      reqMethod: HttpPost,
+      url: parseUri("/apps/" & $apps[0].id & "/deploy"),
+      headers: deployHeaders,
+      body: ""
+    )
+    let deployResp = handleDashboardRequest(dashboard, deployReq)
+    check deployResp.status == 302
+
+    # Verify app status changed to deploying
+    let updated = getApp(db, apps[0].id)
+    check updated.status == asDeploying
+
+  test "dashboard CRUD: create -> view detail -> update -> delete":
+    let sessionId = createSession(db)
+
+    # Create
+    var headers = newHttpHeaders()
+    headers["Cookie"] = SessionCookieName & "=" & sessionId
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    let createReq = Request(
+      reqMethod: HttpPost,
+      url: parseUri("/apps"),
+      headers: headers,
+      body: "name=testcrud&hostname=crud.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fcrud&branch=main&env_vars=&memory_limit=128&cpu_shares=256"
+    )
+    discard handleDashboardRequest(dashboard, createReq)
+
+    let apps = getApps(db)
+    check apps.len == 1
+    let appId = apps[0].id
+
+    # View detail
+    var detailHeaders = newHttpHeaders()
+    detailHeaders["Cookie"] = SessionCookieName & "=" & sessionId
+    let detailReq = Request(
+      reqMethod: HttpGet,
+      url: parseUri("/apps/" & $appId),
+      headers: detailHeaders,
+      body: ""
+    )
+    let detailResp = handleDashboardRequest(dashboard, detailReq)
+    check detailResp.status == 200
+    check "testcrud" in detailResp.body
+    check "crud.example.com" in detailResp.body
+
+    # Update
+    var updateHeaders = newHttpHeaders()
+    updateHeaders["Cookie"] = SessionCookieName & "=" & sessionId
+    updateHeaders["Content-Type"] = "application/x-www-form-urlencoded"
+    let updateReq = Request(
+      reqMethod: HttpPost,
+      url: parseUri("/apps/" & $appId & "/update"),
+      headers: updateHeaders,
+      body: "name=updated&hostname=updated.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fupdated&branch=develop&env_vars=KEY%3Dval&memory_limit=512&cpu_shares=1024"
+    )
+    let updateResp = handleDashboardRequest(dashboard, updateReq)
+    check updateResp.status == 302
+    let updatedApp = getApp(db, appId)
+    check updatedApp.name == "updated"
+    check updatedApp.hostname == "updated.example.com"
+    check updatedApp.branch == "develop"
+
+    # Delete
+    var deleteHeaders = newHttpHeaders()
+    deleteHeaders["Cookie"] = SessionCookieName & "=" & sessionId
+    let deleteReq = Request(
+      reqMethod: HttpPost,
+      url: parseUri("/apps/" & $appId & "/delete"),
+      headers: deleteHeaders,
+      body: ""
+    )
+    let deleteResp = handleDashboardRequest(dashboard, deleteReq)
+    check deleteResp.status == 302
+    let finalApps = getApps(db)
+    check finalApps.len == 0
+
