@@ -2,7 +2,7 @@
   "id": "FEAT-001",
   "type": "chore",
   "description": "Install Nim, create project structure, and verify the toolchain works. Create a new git branch feat/phase-1-parser from the current branch.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create branch feat/phase-1-parser from docs/architecture-and-implementation-plan",
     "Install Nim stable via choosenim: curl https://nim-lang.org/choosenim/init.sh -sSf | sh (non-interactive, add to PATH)",
@@ -31,5 +31,5 @@
     "Run 'nimble test' and confirm exit code 0"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "Nim 2.2.10 installed via choosenim. Required 'xz' package (yum install -y xz) for extraction on Amazon Linux 2023. PATH must include /root/.nimble/bin for nim/nimble commands. nimble build and nimble test both pass cleanly."
 }
