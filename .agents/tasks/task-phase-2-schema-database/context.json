@@ -1,0 +1,27 @@
+{
+  "project_type": "Nim DSL compiler - web framework that compiles to native binaries",
+  "language": "Nim",
+  "build_system": "nimble (package manager) with nim compiler v2.2.10. db_connector package is bundled at /root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src and must be included via -p flag or nim.cfg",
+  "test_framework": "Nim unittest module. Tests in tests/ directory, compiled and run individually.",
+  "build_command": "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --hints:off -p:/root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src src/doot/ddl.nim",
+  "test_command": "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --hints:off -p:/root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src -r tests/test_schema.nim && nim c --hints:off -p:/root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src -r tests/test_query.nim && nim c --hints:off -p:/root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src -r tests/test_migrations.nim",
+  "verification_instructions": "1. Run all Phase 1 tests to confirm no regressions: nimble test. 2. Run each new Phase 2 test file individually with -p flag for db_connector. 3. Verify DDL generation, CRUD operations, validation, and migrations all pass.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "1. export PATH=/root/.nimble/bin:$PATH. 2. cd /projects/sandbox/Doot. 3. db_connector is already installed at /root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src - use -p: flag or add to nim.cfg",
+  "environment_constraints": "nimble install from remote repos may fail due to git proxy issues. db_connector is already bundled locally. Use -p:/root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src for SQLite access. std/json is part of stdlib and works without extra config.",
+  "contribution_requirements": "Work on feat/phase-2-schema-database branch. Keep existing Phase 1 tests passing. Follow existing code conventions (Nim object variants, DootNode pattern). Use db_connector/db_sqlite for SQLite access. Use std/json for JSON serialization.",
+  "key_patterns": "AST uses object variants with NodeKind discriminator in src/doot/ast.nim. DootNode is a ref object. Tables are nkTable with tableName, tableFields (seq of nkField), hasTimestamps. Fields are nkField with fieldName, fieldType (string like 'string','text','integer','boolean','float','datetime'), fieldConstraints (seq of Constraint with key/value). Constraint values are DootNode (nkBoolLit for required, nkIntLit for max, etc). Tests use unittest suite/test pattern. Each source file lives in src/doot/.",
+  "relevant_files": [
+    "src/doot/ast.nim",
+    "src/doot/tokens.nim",
+    "src/doot/parser.nim",
+    "src/doot/resolver.nim",
+    "tests/test_integration.nim",
+    "examples/blog/app.do",
+    "doot.nimble",
+    "docs/implementation-plan.md",
+    "docs/migrations.md",
+    "docs/dsl-spec.md"
+  ],
+  "directory_structure": "src/doot/ - compiler source (tokens.nim, lexer.nim, ast.nim, parser.nim, resolver.nim). tests/ - test files (test_lexer.nim, test_parser.nim, test_integration.nim). examples/blog/ - sample project with app.do, posts.do, comments.do, views/. docs/ - architecture documentation."
+}

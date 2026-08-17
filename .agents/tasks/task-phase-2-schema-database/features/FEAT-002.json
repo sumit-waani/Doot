@@ -1,0 +1,42 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Migration diffing engine, migration file generation, and migration runner. Compares current schema AST against a stored snapshot (.doot/schema_snapshot.json), detects changes (new tables, new columns, removed columns, type changes, renamed tables, removed tables), categorizes them as additive or destructive, generates numbered SQL migration files in migrations/ directory, and implements a runner that applies pending migrations using a _doot_migrations tracking table.",
+  "status": "pending",
+  "steps": [
+    "Create src/doot/schema_snapshot.nim - Schema snapshot serialization: Define a proc schemaToJson(schema: DootNode): JsonNode that serializes a schema AST (all tables, fields, types, constraints, timestamps flag) to JSON. Define proc jsonToSnapshot(j: JsonNode): seq[TableSnapshot] that deserializes the snapshot. TableSnapshot holds table name, fields (name, type, constraints), hasTimestamps. Define proc saveSnapshot(schema: DootNode, path: string) and proc loadSnapshot(path: string): seq[TableSnapshot]. The snapshot path is .doot/schema_snapshot.json relative to project root.",
+    "Create src/doot/migration_diff.nim - Schema diff engine: Define SchemaChange type with variants: AddTable, DropTable, AddColumn, DropColumn, ChangeColumnType, RenameTable. Each carries the relevant info (table name, column name, old/new types). Define proc diffSchema(current: DootNode, previous: seq[TableSnapshot]): seq[SchemaChange] that compares current schema AST against the previous snapshot. Detect: tables in current but not previous = AddTable, tables in previous but not current = DropTable, fields in current table but not previous = AddColumn, fields in previous but not current = DropColumn, same field name but different type = ChangeColumnType. Define proc isDestructive(change: SchemaChange): bool - DropTable, DropColumn, ChangeColumnType are destructive; AddTable, AddColumn are additive.",
+    "Create src/doot/migration_gen.nim - Migration file generation: Define proc generateMigrationSQL(change: SchemaChange): string that produces the SQL for a single change. AddTable produces full CREATE TABLE with all fields (using DDL generation from ddl.nim). AddColumn produces ALTER TABLE ADD COLUMN. DropColumn produces ALTER TABLE DROP COLUMN (SQLite 3.35+). DropTable produces DROP TABLE. ChangeColumnType uses the recreate-table pattern (create new, copy data, drop old, rename). Define proc generateMigrationFile(changes: seq[SchemaChange], migrationsDir: string, nextNumber: int): string that writes numbered migration file(s) and returns the filename. Migration naming: NNN_description.sql where NNN is zero-padded 3 digits and description is auto-generated from the change (e.g., 'create_posts', 'add_slug_to_posts', 'drop_subtitle_from_posts').",
+    "Create src/doot/migration_runner.nim - Migration runner: Define proc ensureMigrationsTable(db: DbConn) that creates _doot_migrations table if not exists (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL UNIQUE, applied_at TEXT NOT NULL DEFAULT (datetime('now'))). Define proc getAppliedMigrations(db: DbConn): seq[string] returning filenames already applied. Define proc getPendingMigrations(migrationsDir: string, applied: seq[string]): seq[string] returning migration files not yet applied, sorted by number. Define proc runMigrations(db: DbConn, migrationsDir: string): tuple[applied: int, errors: seq[string]] that applies pending migrations in order, inserting into _doot_migrations on success. If any migration fails, stop immediately (fail-fast) and return the error.",
+    "Create tests/test_migrations.nim - Comprehensive tests: Test schema snapshot serialization (round-trip: schema->JSON->snapshot matches original). Test diff engine: adding a new table detected as AddTable, adding a field detected as AddColumn, removing a field detected as DropColumn, changing field type detected as ChangeColumnType, removing a table detected as DropTable. Test isDestructive classification (AddTable/AddColumn are not destructive, Drop*/ChangeType are). Test migration SQL generation: AddTable produces valid CREATE TABLE, AddColumn produces ALTER TABLE ADD COLUMN, DropColumn produces ALTER TABLE DROP COLUMN. Test migration file naming (sequential numbering, descriptive suffix). Test migration runner: creates _doot_migrations table, applies pending migrations to actual SQLite DB, skips already-applied migrations, fails fast on SQL error. Use in-memory SQLite and temp directories for file-based tests.",
+    "Update doot.nimble to include tests/test_migrations.nim in the test task"
+  ],
+  "acceptance_criteria": [
+    "Schema snapshot saves all table definitions (name, fields with types and constraints, timestamps) to .doot/schema_snapshot.json as valid JSON",
+    "Schema snapshot can be loaded back and produces equivalent TableSnapshot objects",
+    "Diff engine detects a new table as AddTable change",
+    "Diff engine detects a new field in an existing table as AddColumn",
+    "Diff engine detects a removed field as DropColumn",
+    "Diff engine detects a field type change as ChangeColumnType",
+    "Diff engine detects a removed table as DropTable",
+    "AddTable and AddColumn are classified as non-destructive (additive)",
+    "DropTable, DropColumn, and ChangeColumnType are classified as destructive",
+    "Migration SQL for AddTable produces valid CREATE TABLE statement",
+    "Migration SQL for AddColumn produces valid ALTER TABLE ADD COLUMN statement",
+    "Migration files are numbered sequentially (001_, 002_, etc.) with descriptive names",
+    "Migration files are written to the migrations/ directory as plain .sql files",
+    "Migration runner creates _doot_migrations tracking table",
+    "Migration runner applies pending migrations in sequential order",
+    "Migration runner skips already-applied migrations",
+    "Migration runner fails fast if a migration SQL errors (does not continue to next)",
+    "All tests in tests/test_migrations.nim pass"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --hints:off -r tests/test_migrations.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --hints:off -r tests/test_schema.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --hints:off -r tests/test_query.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nimble test"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

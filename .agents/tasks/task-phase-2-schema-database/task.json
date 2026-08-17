@@ -1,0 +1,7 @@
+{
+  "task_id": "task-phase-2-schema-database",
+  "task_description": "Implement Phase 2 of the Doot DSL compiler: Schema and Database layer. Transforms schema AST declarations into SQLite DDL, generates a query interface (create, find, find_by, all, update, delete) with Result objects and validation, implements row types, and builds a migration system (diffing engine, file generation, runner).",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002"],
+  "blocked_reason": null
+}

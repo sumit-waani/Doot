@@ -1,0 +1,41 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Schema AST to SQLite DDL generation and query interface with Result objects, validation, and row types. This is the core database layer: transforms TableNode/FieldNode AST into CREATE TABLE SQL, implements type-safe row objects for each table, provides CRUD operations (create, find, find_by, all, update, delete) with parameterized queries, implements Result objects (isOk, errors, record), and validation logic (required fields via NOT NULL, max length at application level).",
+  "status": "in_progress",
+  "steps": [
+    "Create nim.cfg at project root with: --path:\"/root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src\" so all compilations find db_connector/db_sqlite automatically",
+    "Add 'requires \"db_connector >= 0.1.0\"' to doot.nimble dependencies section (even though installed locally, documents the dependency)",
+    "Create src/doot/ddl.nim - Schema AST to DDL conversion: proc generateDDL(table: DootNode): string that takes an nkTable node and produces CREATE TABLE SQL. Type mapping: string->TEXT, text->TEXT, integer->INTEGER, boolean->INTEGER, float->REAL, datetime->TEXT. Auto-add 'id INTEGER PRIMARY KEY AUTOINCREMENT'. For required:true constraint add NOT NULL. For hasTimestamps add created_at/updated_at TEXT NOT NULL DEFAULT (datetime('now')). For fields with default values, add DEFAULT clause. Export a proc generateAllDDL(schema: DootNode): seq[string] that processes all tables in a schema node.",
+    "Create src/doot/db_types.nim - Row type generation and Result object: Define a generic Row object that stores field values in a Table[string, DbValue] (or seq of named values). Define DbValue as a variant type (dvString, dvInt, dvFloat, dvBool, dvNull, dvDatetime). Define DbResult object with fields: ok (bool), errors (seq[string]), record (Row or nil). Define a TableSchema object that holds table name, field definitions, constraints for runtime validation.",
+    "Create src/doot/query.nim - Query interface implementing all CRUD operations: proc dbCreate(db: DbConn, schema: TableSchema, values: Table[string,DbValue]): DbResult - validates required fields and max length, executes parameterized INSERT, returns result. proc dbFind(db: DbConn, schema: TableSchema, id: int): Option[Row] - SELECT by id, returns Option. proc dbFindBy(db: DbConn, schema: TableSchema, field: string, value: DbValue): Option[Row] - SELECT WHERE field=?, returns first match. proc dbAll(db: DbConn, schema: TableSchema, where: string = \"\", order: string = \"\", limit: int = 0): seq[Row] - SELECT with optional WHERE/ORDER/LIMIT (where clause values still parameterized). proc dbUpdate(db: DbConn, schema: TableSchema, row: Row, values: Table[string,DbValue]): DbResult - validates then UPDATE. proc dbDelete(db: DbConn, schema: TableSchema, row: Row): DbResult - DELETE by id. All queries MUST use parameterized SQL (? placeholders). Validation: check required fields are not empty/null, check max length for string fields.",
+    "Create src/doot/schema_utils.nim - Utility to convert parsed AST TableNode/FieldNode into TableSchema objects at runtime. proc tableNodeToSchema(node: DootNode): TableSchema that extracts field names, types, constraints into the TableSchema structure used by query.nim.",
+    "Create tests/test_schema.nim - Comprehensive tests for DDL generation: test CREATE TABLE output for a table with various field types, test NOT NULL for required fields, test timestamps generation, test default values, test auto id column. Test the full cycle: generate DDL, execute it on an in-memory SQLite DB, verify table exists with correct schema.",
+    "Create tests/test_query.nim - Comprehensive tests for CRUD operations and validation: set up in-memory SQLite DB with a posts table (title TEXT NOT NULL, body TEXT NOT NULL, published INTEGER DEFAULT 0, created_at, updated_at, id). Test dbCreate with valid data returns ok=true and record with id. Test dbCreate with missing required field returns ok=false with errors. Test dbCreate with max length violation returns ok=false. Test dbFind returns Some for existing row, None for non-existent. Test dbFindBy returns matching row. Test dbAll returns all rows, with order and limit. Test dbUpdate changes fields and returns ok. Test dbUpdate with validation failure returns errors. Test dbDelete removes the row. Verify all operations use the actual SQLite database (not mocks).",
+    "Update doot.nimble to add the new test files to the test task"
+  ],
+  "acceptance_criteria": [
+    "A TableNode with fields generates valid CREATE TABLE SQL with id, field columns, and timestamps",
+    "Field types map correctly: string->TEXT, text->TEXT, integer->INTEGER, boolean->INTEGER, float->REAL, datetime->TEXT",
+    "required:true produces NOT NULL constraint in DDL",
+    "timestamps produces created_at and updated_at columns with DEFAULT (datetime('now'))",
+    "dbCreate inserts a row and returns DbResult with ok=true and the record including auto-generated id",
+    "dbCreate with missing required field returns DbResult with ok=false and descriptive error message",
+    "dbCreate with string exceeding max length returns DbResult with ok=false and error",
+    "dbFind(existing_id) returns Some(Row) with correct field values",
+    "dbFind(nonexistent_id) returns None",
+    "dbFindBy(field, value) returns the matching row",
+    "dbAll returns all rows; dbAll with order returns sorted results; dbAll with limit caps results",
+    "dbUpdate changes the specified fields and returns ok=true",
+    "dbDelete removes the row from the database",
+    "All SQL queries use parameterized statements (? placeholders, no string interpolation of values)",
+    "All tests in tests/test_schema.nim and tests/test_query.nim pass"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --hints:off -r tests/test_schema.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --hints:off -r tests/test_query.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nimble test"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
