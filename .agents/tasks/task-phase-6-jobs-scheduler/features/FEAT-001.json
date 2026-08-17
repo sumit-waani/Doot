@@ -1,0 +1,38 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Implement the jobs runtime module (src/doot/jobs.nim) with SQLite-backed job queue, worker pool, scheduler, enqueue/dispatch, retry logic, and stuck job detection. Also add AST nodes and parser support for job/schedule/enqueue syntax.",
+  "status": "in_progress",
+  "steps": [
+    "1. Add new AST node kinds to src/doot/ast.nim: nkJob (jobName: string, jobParam: string, jobBody: seq[DootNode]), nkSchedule (scheduleName: string, scheduleInterval: string, scheduleBody: seq[DootNode]), nkEnqueue (enqueueName: DootNode, enqueueArgs: seq[KeyValuePair]). Add constructor procs following existing patterns.",
+    "2. Update src/doot/parser.nim: In parseApp(), add cases for tkJob -> parseJob() and tkSchedule -> parseSchedule(). In parseHandlerBody(), add case for tkJob -> parseEnqueueStatement() (since enqueue is an identifier, handle 'enqueue' in parseStatementStartingWithIdent or add a new token). Implement parseJob() to parse: job \"name\" do |payload| ... end. Implement parseSchedule() to parse: schedule \"name\", every: \"interval\" do ... end. For enqueue, handle it as an identifier-started statement in parseStatementStartingWithIdent - when identifier is 'enqueue', parse: enqueue \"job_name\", key: value, key: value.",
+    "3. Create src/doot/jobs.nim with the following components: (a) JobsTableSQL constant with CREATE TABLE IF NOT EXISTS _doot_jobs schema matching the spec (id, job_type, payload, status, run_at, attempts, locked_at, error, created_at, updated_at) plus indexes on status and run_at. (b) Types: JobStatus enum (jsPending, jsRunning, jsCompleted, jsFailed), JobRecord object, JobHandler proc type (proc(payload: JsonNode): Future[void]), WorkerPool ref object, ScheduleEntry object. (c) Interval parsing: proc parseInterval(s: string): Duration that handles '30 seconds', '5 minutes', '1 hour', '1 day', '1 week'. (d) Job queue operations: initJobsTable(db), enqueueJob(db, jobType, payload, runAt, delay), claimNextJob(db, lockTimeout), completeJob(db, jobId), failJob(db, jobId, error, maxAttempts), retryJob(db, jobId), unlockStuckJobs(db, timeout). (e) Worker pool: newWorkerPool(db, poolSize, pollInterval), registerJobHandler(pool, jobType, handler), startWorkerPool(pool) as async, stopWorkerPool(pool). (f) Scheduler: addSchedule(pool, name, interval, handler), startScheduler(pool) as async. (g) Job status queries: getJobCounts(db), getFailedJobs(db), getRecentJobs(db, limit).",
+    "4. The worker pool polling loop: each worker is an async proc that loops: poll for pending job where run_at <= now and status = 'pending', claim it (UPDATE set locked_at and status = 'running'), execute the registered handler, on success call completeJob, on failure call failJob. Poll interval configurable (default 5 seconds for tests, 10-30 seconds for production). Use asyncdispatch sleepAsync between polls.",
+    "5. The scheduler loop: an async proc that checks each registered schedule entry, if enough time has passed since last insertion, inserts a new job into the queue. The worker pool then picks it up normally.",
+    "6. Stuck job detection: unlockStuckJobs(db, timeout: Duration) finds jobs where status = 'running' and locked_at < now - timeout, resets them to status = 'pending' and clears locked_at. Called periodically by the worker pool.",
+    "7. Retry logic: when a job fails, if attempts < maxAttempts (default 3), set status back to 'pending' (re-enqueue). If attempts >= maxAttempts, set status to 'failed'. The failJob proc handles this logic."
+  ],
+  "acceptance_criteria": [
+    "src/doot/ast.nim compiles with new nkJob, nkSchedule, nkEnqueue node kinds",
+    "src/doot/parser.nim correctly parses 'job \"name\" do |payload| ... end' into nkJob AST node",
+    "src/doot/parser.nim correctly parses 'schedule \"name\", every: \"1 hour\" do ... end' into nkSchedule AST node",
+    "Parser handles 'enqueue \"job_name\", key: value' as a statement in handler bodies",
+    "src/doot/jobs.nim compiles and exports all required types and procs",
+    "initJobsTable creates _doot_jobs table with correct schema and indexes",
+    "enqueueJob inserts a row with correct fields (job_type, payload as JSON, status=pending, run_at)",
+    "claimNextJob atomically selects and locks a pending job",
+    "Worker pool picks up and executes enqueued jobs",
+    "Failed jobs have status='failed' and attempts incremented",
+    "Retry re-enqueues up to max_attempts",
+    "Stuck job detection unlocks jobs with locked_at exceeding timeout",
+    "Scheduler inserts jobs at configured intervals",
+    "parseInterval correctly parses '30 seconds', '5 minutes', '1 hour', '1 day'"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_jobs.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_parser.nim"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

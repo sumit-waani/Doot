@@ -37,6 +37,11 @@ type
     nkTemplateIf
     nkTemplateEach
 
+    # Jobs / Scheduler
+    nkJob
+    nkSchedule
+    nkEnqueue
+
     # Expressions
     nkStringLit
     nkIntLit
@@ -143,6 +148,20 @@ type
 
     of nkNativeBlock:
       nativeContent*: string
+
+    of nkJob:
+      jobName*: string
+      jobParam*: string
+      jobBody*: seq[DootNode]
+
+    of nkSchedule:
+      scheduleName*: string
+      scheduleInterval*: string
+      scheduleBody*: seq[DootNode]
+
+    of nkEnqueue:
+      enqueueName*: string
+      enqueueArgs*: seq[KeyValuePair]
 
     of nkTemplate:
       tmplExtends*: string          # extends path or "" if none
@@ -301,6 +320,18 @@ proc newEachNode*(varName: string, collection: DootNode, file: string = "", line
 
 proc newNativeBlockNode*(content: string, file: string = "", line: int = 0, col: int = 0): DootNode =
   DootNode(kind: nkNativeBlock, file: file, line: line, col: col, nativeContent: content)
+
+proc newJobNode*(name: string, param: string, body: seq[DootNode] = @[], file: string = "", line: int = 0, col: int = 0): DootNode =
+  DootNode(kind: nkJob, file: file, line: line, col: col,
+           jobName: name, jobParam: param, jobBody: body)
+
+proc newScheduleNode*(name: string, interval: string, body: seq[DootNode] = @[], file: string = "", line: int = 0, col: int = 0): DootNode =
+  DootNode(kind: nkSchedule, file: file, line: line, col: col,
+           scheduleName: name, scheduleInterval: interval, scheduleBody: body)
+
+proc newEnqueueNode*(name: string, args: seq[KeyValuePair] = @[], file: string = "", line: int = 0, col: int = 0): DootNode =
+  DootNode(kind: nkEnqueue, file: file, line: line, col: col,
+           enqueueName: name, enqueueArgs: args)
 
 proc newTemplateNode*(file: string = "", line: int = 0, col: int = 0): DootNode =
   DootNode(kind: nkTemplate, file: file, line: line, col: col,
