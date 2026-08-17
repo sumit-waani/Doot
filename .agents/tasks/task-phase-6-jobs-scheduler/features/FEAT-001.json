@@ -2,7 +2,7 @@
   "id": "FEAT-001",
   "type": "feat",
   "description": "Implement the jobs runtime module (src/doot/jobs.nim) with SQLite-backed job queue, worker pool, scheduler, enqueue/dispatch, retry logic, and stuck job detection. Also add AST nodes and parser support for job/schedule/enqueue syntax.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "1. Add new AST node kinds to src/doot/ast.nim: nkJob (jobName: string, jobParam: string, jobBody: seq[DootNode]), nkSchedule (scheduleName: string, scheduleInterval: string, scheduleBody: seq[DootNode]), nkEnqueue (enqueueName: DootNode, enqueueArgs: seq[KeyValuePair]). Add constructor procs following existing patterns.",
     "2. Update src/doot/parser.nim: In parseApp(), add cases for tkJob -> parseJob() and tkSchedule -> parseSchedule(). In parseHandlerBody(), add case for tkJob -> parseEnqueueStatement() (since enqueue is an identifier, handle 'enqueue' in parseStatementStartingWithIdent or add a new token). Implement parseJob() to parse: job \"name\" do |payload| ... end. Implement parseSchedule() to parse: schedule \"name\", every: \"interval\" do ... end. For enqueue, handle it as an identifier-started statement in parseStatementStartingWithIdent - when identifier is 'enqueue', parse: enqueue \"job_name\", key: value, key: value.",
@@ -34,5 +34,5 @@
     "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_parser.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "1. JobHandler type uses {.closure.} pragma (no gcsafe) since SQLite is single-threaded. 2. Async exception handling requires yield+fut.failed pattern instead of try/except around await. 3. Worker pool uses std/options for claimNextJob return type. 4. All 44 tests pass including parser tests for job/schedule/enqueue syntax."
 }
