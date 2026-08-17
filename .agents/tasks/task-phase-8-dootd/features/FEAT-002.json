@@ -2,7 +2,7 @@
   "id": "FEAT-002",
   "type": "feat",
   "description": "Dashboard web UI with authentication, app CRUD, deploy trigger, log viewing, server stats, and settings pages. Server-rendered HTML (not a SPA). The dashboard runs on port 8080 and requires admin password authentication.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create src/doot/dootd_dashboard.nim - Implement the dashboard HTTP server using std/asynchttpserver (same pattern as server.nim). Define DootdDashboard object with fields: port (default 8080), db (DbConn for dootd.db), sessionSecret (generated on init), running flag. Functions: newDootdDashboard(db, port), startDashboard(dashboard) starts async HTTP server, handleDashboardRequest(dashboard, req) routes requests. Use a simple cookie-based session (reuse session.nim pattern) for auth. Routes: GET /login (show login form), POST /login (verify password, create session, redirect), GET / (app list - requires auth), GET /apps/new (create app form), POST /apps (create app), GET /apps/:id (app detail), POST /apps/:id/deploy (trigger deploy), GET /apps/:id/logs (view logs), GET /apps/:id/edit (edit app), POST /apps/:id/update (update app), POST /apps/:id/delete (delete app), GET /stats (server stats), GET /settings (settings page), POST /settings/password (change password), POST /logout (destroy session).",
     "Create src/doot/dootd_html.nim - Server-rendered HTML templates as Nim string procs (simple HTML generation, no SPA). Functions: renderLayout(title, bodyContent, isLoggedIn) wraps content in a basic HTML shell with nav bar and minimal CSS. renderLoginPage(error) login form. renderAppList(apps) table of apps with status indicators and deploy buttons. renderAppForm(app=nil) form for creating/editing an app (fields: name, hostname, github_url, pat, branch, env vars textarea, memory_limit, cpu_shares). renderAppDetail(app, recentLogs) app info with deploy button, status, recent log lines. renderLogsPage(appName, logs, filter) log viewer with basic search/filter. renderStatsPage(stats) server metrics display (CPU%, mem used/total, disk used/total, per-app memory). renderSettingsPage(message) settings form with password change. Each function returns a string of HTML. Use inline CSS (a single embedded stylesheet in the layout) for a clean, functional look.",
@@ -30,5 +30,5 @@
     "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All 127 tests pass (55 pre-existing + 72 new). No compilation warnings. The dashboard uses a simplified session model (SQLite table dootd_sessions) separate from the main app session.nim to avoid coupling. Request objects are constructed directly in tests (no network binding needed). Stats collection degrades gracefully - /proc/stat and /proc/meminfo are readable in the sandbox. The crypto import was removed from dootd_dashboard.nim since password hashing goes through dootd_password.nim which already imports crypto."
 }
