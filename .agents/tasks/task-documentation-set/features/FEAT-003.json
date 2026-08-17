@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-003",
+  "type": "docs",
+  "description": "Create the systems and infrastructure documentation: cli.md, dootd.md, auth.md, migrations.md, jobs-and-scheduler.md. These cover the CLI commands, production deployment, authentication, database migrations, and background processing.",
+  "status": "completed",
+  "steps": [
+    "Create docs/cli.md covering: doot new <name> (scaffolding behavior, generated files), doot dev (full recompile+restart on file change, incremental compilation cache, file watching, error output), doot help, doot --prod (mode switch to daemon, auto-generated password, systemd registration, idempotent re-runs, --reset-password), and explicitly noting no standalone doot build command (build is dootd's responsibility).",
+    "Create docs/dootd.md covering: dashboard/daemon architecture, deploy flow (GitHub URL + PAT + env vars), build process on deploy, child process management with internal port assignment, host-header based routing (plain HTTP, port 80), cgroups-based isolation, basic logs/stats in dashboard, redeploy on push, systemd service persistence, --prod mode initialization (password generation, shown once, idempotent), and explicit non-goals (no multi-tenant, no Docker, no container orchestration).",
+    "Create docs/auth.md covering: full built-in auth system spec, schema auth block syntax, roles (optional), email_verification (optional, requires SMTP in .env), auto-generated routes (POST /signup, /login, /logout), password hashing (argon2/bcrypt, invisible to user), session creation + signed cookie, ctx.current_user availability, route-level and group-level role checks, default deny posture (auth: required is implicit, auth: public must be explicit), and scope boundaries (profile data is user's job, not auth's).",
+    "Create docs/migrations.md covering: auto-generated migration files from schema diffs, same mechanism for dev and prod, doot dev behavior (diffs app.do schema on change, generates migration file committed to git), additive changes auto-apply (new table/column), destructive changes require explicit confirmation (rename/drop, never silent data loss), migration file format, dootd applies same files on prod deploy, and one migration system not two.",
+    "Create docs/jobs-and-scheduler.md covering: queue design (SQLite table with id/job_type/payload/status/run_at/attempts/locked_at), enqueue = INSERT, worker design (in-process thread/async pool, no separate worker process), pool size (default 2-4, configurable), SQLite single-writer as a feature (no race conditions), scheduler/cron (declarative DSL syntax, same background loop inserting jobs), retry/failure handling (minimal: failed jobs in dashboard, retry button, no complex backoff in v1), and DSL syntax for declaring jobs and scheduled tasks."
+  ],
+  "acceptance_criteria": [
+    "docs/cli.md exists with all CLI commands documented",
+    "docs/dootd.md exists with complete dashboard/daemon architecture",
+    "docs/auth.md exists with full auth system specification",
+    "docs/migrations.md exists with migration generation and apply logic",
+    "docs/jobs-and-scheduler.md exists with queue, worker, and scheduler docs",
+    "All files are internally consistent and cross-reference correctly"
+  ],
+  "verification": [
+    "Verify all 5 files exist: ls docs/cli.md docs/dootd.md docs/auth.md docs/migrations.md docs/jobs-and-scheduler.md",
+    "Verify files are non-empty and contain proper markdown headings"
+  ],
+  "blocked_reason": null,
+  "findings": "All 5 documentation files created successfully. Files are internally consistent and cross-reference each other (e.g., migrations.md references from cli.md and dootd.md, jobs-and-scheduler.md references from auth.md). Total 1880 lines of documentation added."
+}

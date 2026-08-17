@@ -1,0 +1,25 @@
+{
+  "id": "FEAT-002",
+  "type": "docs",
+  "description": "Create the DSL and compiler documentation: dsl-spec.md, compiler-pipeline.md, templates.md, and stdlib.md. These define the language syntax, compilation process, and built-in capabilities.",
+  "status": "completed",
+  "steps": [
+    "Create docs/dsl-spec.md covering: complete DSL syntax reference including route declarations (GET/POST/PUT/DELETE/PATCH), handler syntax with ctx parameter, schema declarations (tables, fields, types, constraints, timestamps), group blocks with auth/role, db.<table>.* query interface (create/find/all/update/delete), result objects (ok?/errors), render calls with explicit locals, redirect, string interpolation, control flow (if/else/each), and expression syntax.",
+    "Create docs/compiler-pipeline.md covering: handwritten recursive-descent parser design, whitespace-significant parsing, AST node types, Nim code generation strategy, incremental compilation cache usage, migration file generation from schema diffs, error message design philosophy (for humans and agents), and future LSP tooling path.",
+    "Create docs/templates.md covering: Pug-style whitespace-significant syntax, no closing tags, expression output with = (auto-escaped by default), inheritance via extends, multiple named blocks (title, head, content, etc.), partials, each/if control flow, class shorthand (div.class-name), HTMX attribute support (plain literal attributes), HTMX delivery (embedded in binary, no CDN), style-embed directive, and deferred features (flash messages, pagination).",
+    "Create docs/stdlib.md with 25-30 proposed built-in functions/objects covering: string helpers (truncate, slugify, capitalize, downcase, upcase, strip, split, join, starts_with?, ends_with?, includes?, replace), date/time (now, format_date, parse_date, time_ago, add_days/hours/minutes), JSON (to_json, from_json), logging (log.info/warn/error/debug), HTTP client (http.get/post/put/delete with headers/body/timeout), email (email.send with to/subject/body/from), crypto/security (hash, hmac, random_token, secure_compare), type checking (is_nil?, is_empty?, to_i, to_f, to_s), collections (map, filter, select, reject, first, last, count, sort_by, group_by), and URL helpers (url_encode, url_decode, path_for)."
+  ],
+  "acceptance_criteria": [
+    "docs/dsl-spec.md exists with complete syntax reference and concrete examples",
+    "docs/compiler-pipeline.md exists explaining parser->AST->Nim codegen with technical detail",
+    "docs/templates.md exists with full template syntax, inheritance, and examples",
+    "docs/stdlib.md exists with 25-30 categorized built-in functions with signatures and examples",
+    "All files reference consistent syntax and terminology"
+  ],
+  "verification": [
+    "Verify all 4 files exist: ls docs/dsl-spec.md docs/compiler-pipeline.md docs/templates.md docs/stdlib.md",
+    "Verify files are non-empty and contain proper markdown headings"
+  ],
+  "blocked_reason": null,
+  "findings": "All 4 docs created successfully. dsl-spec.md (897 lines) covers routes, schema, ctx, db queries, result objects, render, redirect, string interpolation, control flow, CORS, sessions, error handling, file uploads, and jobs. compiler-pipeline.md (441 lines) covers handwritten RD parser rationale, tokenization with parse modes, AST node types, Nim codegen strategy, incremental cache, migration diffs, error message design, and future LSP. templates.md (654 lines) covers Pug-style syntax, expression output with auto-escaping, attributes, class/ID shorthand, extends with multiple named blocks, default block values, partials, control flow, HTMX attributes+delivery, style-embed, and error pages. stdlib.md (946 lines) documents 54 functions across 10 categories with signatures, descriptions, examples, and return types. Consistent terminology used throughout: 'native do ... end', 'db.<table>.*', 'ctx', '.do' extension, Rule references matching philosophy.md numbering."
+}

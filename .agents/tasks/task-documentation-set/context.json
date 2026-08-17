@@ -1,0 +1,16 @@
+{
+  "project_type": "Documentation set for Doot DSL project (no code yet)",
+  "language": "Markdown",
+  "build_system": "N/A - documentation only",
+  "test_framework": "N/A - documentation only",
+  "build_command": "N/A",
+  "test_command": "N/A",
+  "verification_instructions": "Verify all 14 markdown files exist under docs/ and are well-formed markdown",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "No setup needed - just create markdown files",
+  "environment_constraints": "None - just writing documentation files",
+  "contribution_requirements": "N/A",
+  "key_patterns": "The spec file at doot-v1-spec.md contains all the source material. Docs should be comprehensive, internally consistent, use concrete examples, and maintain the 6 core philosophy principles throughout.",
+  "relevant_files": ["doot-v1-spec.md"],
+  "directory_structure": "Root contains doot-v1-spec.md and README.md. All new docs go in docs/ directory."
+}
