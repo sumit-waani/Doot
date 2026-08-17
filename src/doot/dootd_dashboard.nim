@@ -77,8 +77,8 @@ proc validateSession*(db: DbConn, sessionId: string): bool =
         db.exec(sql"DELETE FROM dootd_sessions WHERE session_id = ?", sessionId)
         return false
     except TimeParseError:
-      # If we still cannot parse, accept the session (backward compat)
-      discard
+      # If we still cannot parse, reject the session (fail-closed)
+      return false
   result = true
 
 proc deleteSessionById*(db: DbConn, sessionId: string) =

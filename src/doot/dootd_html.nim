@@ -6,6 +6,18 @@ import std/[strutils]
 import ./dootd_types
 import ./dootd_stats
 
+proc escapeHtml*(s: string): string =
+  ## Escape HTML special characters to prevent XSS.
+  ## Replaces &, <, >, and " with their HTML entity equivalents.
+  result = ""
+  for c in s:
+    case c
+    of '&': result.add("&amp;")
+    of '<': result.add("&lt;")
+    of '>': result.add("&gt;")
+    of '"': result.add("&quot;")
+    else: result.add(c)
+
 const DashboardCSS* = """
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -108,7 +120,7 @@ proc renderLayout*(title: string, bodyContent: string, isLoggedIn: bool = true, 
   result = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
   result.add("  <meta charset=\"UTF-8\">\n")
   result.add("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n")
-  result.add("  <title>" & title & " - Dootd</title>\n")
+  result.add("  <title>" & escapeHtml(title) & " - Dootd</title>\n")
   result.add("  <style>" & DashboardCSS & "</style>\n")
   result.add("</head>\n<body>\n")
 
@@ -138,7 +150,7 @@ proc renderLoginPage*(error: string = ""): string =
   body.add("    <h1>dootd</h1>\n")
   body.add("    <p>Production Dashboard</p>\n")
   if error.len > 0:
-    body.add("    <div class=\"alert alert-error\">" & error & "</div>\n")
+    body.add("    <div class=\"alert alert-error\">" & escapeHtml(error) & "</div>\n")
   body.add("    <form method=\"POST\" action=\"/login\">\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <input type=\"password\" name=\"password\" placeholder=\"Admin password\" required autofocus>\n")
@@ -173,8 +185,8 @@ proc renderAppList*(apps: seq[AppConfig], csrfToken: string = ""): string =
     body.add("      <tbody>\n")
     for app in apps:
       body.add("        <tr>\n")
-      body.add("          <td><a href=\"/apps/" & $app.id & "\">" & app.name & "</a></td>\n")
-      body.add("          <td>" & app.hostname & "</td>\n")
+      body.add("          <td><a href=\"/apps/" & $app.id & "\">" & escapeHtml(app.name) & "</a></td>\n")
+      body.add("          <td>" & escapeHtml(app.hostname) & "</td>\n")
       body.add("          <td>" & $app.internalPort & "</td>\n")
       body.add("          <td><span class=\"status-badge " & statusClass(app.status) & "\">" & $app.status & "</span></td>\n")
       body.add("          <td class=\"actions\">\n")
@@ -205,27 +217,27 @@ proc renderAppForm*(app: AppConfig = AppConfig(), isEdit: bool = false, csrfToke
   body.add("      <input type=\"hidden\" name=\"csrf_token\" value=\"" & csrfToken & "\">\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"name\">App Name</label>\n")
-  body.add("        <input type=\"text\" id=\"name\" name=\"name\" value=\"" & app.name & "\" required>\n")
+  body.add("        <input type=\"text\" id=\"name\" name=\"name\" value=\"" & escapeHtml(app.name) & "\" required>\n")
   body.add("      </div>\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"hostname\">Hostname</label>\n")
-  body.add("        <input type=\"text\" id=\"hostname\" name=\"hostname\" value=\"" & app.hostname & "\" placeholder=\"myapp.example.com\" required>\n")
+  body.add("        <input type=\"text\" id=\"hostname\" name=\"hostname\" value=\"" & escapeHtml(app.hostname) & "\" placeholder=\"myapp.example.com\" required>\n")
   body.add("      </div>\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"github_url\">GitHub URL</label>\n")
-  body.add("        <input type=\"text\" id=\"github_url\" name=\"github_url\" value=\"" & app.githubUrl & "\" placeholder=\"https://github.com/user/repo\" required>\n")
+  body.add("        <input type=\"text\" id=\"github_url\" name=\"github_url\" value=\"" & escapeHtml(app.githubUrl) & "\" placeholder=\"https://github.com/user/repo\" required>\n")
   body.add("      </div>\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"pat\">Personal Access Token (PAT)</label>\n")
-  body.add("        <input type=\"password\" id=\"pat\" name=\"pat\" value=\"" & app.pat & "\">\n")
+  body.add("        <input type=\"password\" id=\"pat\" name=\"pat\" value=\"" & escapeHtml(app.pat) & "\">\n")
   body.add("      </div>\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"branch\">Branch</label>\n")
-  body.add("        <input type=\"text\" id=\"branch\" name=\"branch\" value=\"" & (if app.branch.len > 0: app.branch else: "main") & "\">\n")
+  body.add("        <input type=\"text\" id=\"branch\" name=\"branch\" value=\"" & escapeHtml(if app.branch.len > 0: app.branch else: "main") & "\">\n")
   body.add("      </div>\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"env_vars\">Environment Variables (one KEY=VALUE per line)</label>\n")
-  body.add("        <textarea id=\"env_vars\" name=\"env_vars\" placeholder=\"DATABASE_URL=sqlite:app.db&#10;PORT=3001\">" & app.envVars & "</textarea>\n")
+  body.add("        <textarea id=\"env_vars\" name=\"env_vars\" placeholder=\"DATABASE_URL=sqlite:app.db&#10;PORT=3001\">" & escapeHtml(app.envVars) & "</textarea>\n")
   body.add("      </div>\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"memory_limit\">Memory Limit (MB, 0 = unlimited)</label>\n")
@@ -250,13 +262,13 @@ proc renderAppDetail*(app: AppConfig, recentLogs: seq[tuple[timestamp, stream, m
   var body = "<div class=\"container\">\n"
   body.add("  <div class=\"card\">\n")
   body.add("    <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem\">\n")
-  body.add("      <h2>" & app.name & "</h2>\n")
+  body.add("      <h2>" & escapeHtml(app.name) & "</h2>\n")
   body.add("      <span class=\"status-badge " & statusClass(app.status) & "\">" & $app.status & "</span>\n")
   body.add("    </div>\n")
   body.add("    <table>\n")
-  body.add("      <tr><td><strong>Hostname</strong></td><td>" & app.hostname & "</td></tr>\n")
-  body.add("      <tr><td><strong>GitHub URL</strong></td><td>" & app.githubUrl & "</td></tr>\n")
-  body.add("      <tr><td><strong>Branch</strong></td><td>" & app.branch & "</td></tr>\n")
+  body.add("      <tr><td><strong>Hostname</strong></td><td>" & escapeHtml(app.hostname) & "</td></tr>\n")
+  body.add("      <tr><td><strong>GitHub URL</strong></td><td>" & escapeHtml(app.githubUrl) & "</td></tr>\n")
+  body.add("      <tr><td><strong>Branch</strong></td><td>" & escapeHtml(app.branch) & "</td></tr>\n")
   body.add("      <tr><td><strong>Internal Port</strong></td><td>" & $app.internalPort & "</td></tr>\n")
   body.add("      <tr><td><strong>Memory Limit</strong></td><td>" & (if app.memoryLimit > 0: $app.memoryLimit & " MB" else: "Unlimited") & "</td></tr>\n")
   body.add("      <tr><td><strong>CPU Shares</strong></td><td>" & (if app.cpuShares > 0: $app.cpuShares else: "Default") & "</td></tr>\n")
@@ -281,21 +293,21 @@ proc renderAppDetail*(app: AppConfig, recentLogs: seq[tuple[timestamp, stream, m
     body.add("    <div class=\"log-container\">\n")
     for log in recentLogs:
       let streamClass = if log.stream == "stdout": "stream-stdout" else: "stream-stderr"
-      body.add("      <div class=\"log-line\"><span class=\"ts\">[" & log.timestamp & "]</span> <span class=\"" & streamClass & "\">[" & log.stream & "]</span> " & log.message & "</div>\n")
+      body.add("      <div class=\"log-line\"><span class=\"ts\">[" & escapeHtml(log.timestamp) & "]</span> <span class=\"" & streamClass & "\">[" & log.stream & "]</span> " & escapeHtml(log.message) & "</div>\n")
     body.add("    </div>\n")
     body.add("  </div>\n")
 
   body.add("</div>\n")
-  result = renderLayout(app.name, body)
+  result = renderLayout(escapeHtml(app.name), body)
 
 proc renderLogsPage*(appName: string, logs: seq[tuple[timestamp, stream, message: string]], filter: string = ""): string =
   ## Render the log viewer page with search filtering.
   var body = "<div class=\"container\">\n"
   body.add("  <div class=\"card\">\n")
-  body.add("    <h2>Logs: " & appName & "</h2>\n")
+  body.add("    <h2>Logs: " & escapeHtml(appName) & "</h2>\n")
   body.add("    <form method=\"GET\" style=\"margin-bottom:1rem\">\n")
   body.add("      <div style=\"display:flex;gap:0.5rem\">\n")
-  body.add("        <input type=\"text\" name=\"search\" value=\"" & filter & "\" placeholder=\"Filter logs...\" style=\"flex:1;padding:0.5rem;border:1px solid #ddd;border-radius:4px\">\n")
+  body.add("        <input type=\"text\" name=\"search\" value=\"" & escapeHtml(filter) & "\" placeholder=\"Filter logs...\" style=\"flex:1;padding:0.5rem;border:1px solid #ddd;border-radius:4px\">\n")
   body.add("        <button type=\"submit\" class=\"btn btn-primary\">Search</button>\n")
   body.add("      </div>\n")
   body.add("    </form>\n")
@@ -306,12 +318,12 @@ proc renderLogsPage*(appName: string, logs: seq[tuple[timestamp, stream, message
   else:
     for log in logs:
       let streamClass = if log.stream == "stdout": "stream-stdout" else: "stream-stderr"
-      body.add("      <div class=\"log-line\"><span class=\"ts\">[" & log.timestamp & "]</span> <span class=\"" & streamClass & "\">[" & log.stream & "]</span> " & log.message & "</div>\n")
+      body.add("      <div class=\"log-line\"><span class=\"ts\">[" & escapeHtml(log.timestamp) & "]</span> <span class=\"" & streamClass & "\">[" & log.stream & "]</span> " & escapeHtml(log.message) & "</div>\n")
 
   body.add("    </div>\n")
   body.add("  </div>\n")
   body.add("</div>\n")
-  result = renderLayout("Logs - " & appName, body)
+  result = renderLayout("Logs - " & escapeHtml(appName), body)
 
 proc renderStatsPage*(stats: SystemStats): string =
   ## Render the server stats page with system metrics.
@@ -322,13 +334,13 @@ proc renderStatsPage*(stats: SystemStats): string =
 
   # Hostname
   body.add("      <div class=\"stat-card\">\n")
-  body.add("        <div class=\"stat-value\">" & stats.hostname & "</div>\n")
+  body.add("        <div class=\"stat-value\">" & escapeHtml(stats.hostname) & "</div>\n")
   body.add("        <div class=\"stat-label\">Hostname</div>\n")
   body.add("      </div>\n")
 
   # Uptime
   body.add("      <div class=\"stat-card\">\n")
-  body.add("        <div class=\"stat-value\">" & stats.uptime & "</div>\n")
+  body.add("        <div class=\"stat-value\">" & escapeHtml(stats.uptime) & "</div>\n")
   body.add("        <div class=\"stat-label\">Uptime</div>\n")
   body.add("      </div>\n")
 
@@ -380,7 +392,7 @@ proc renderSettingsPage*(message: string = "", isError: bool = false, csrfToken:
   body.add("    <h2>Settings</h2>\n")
   if message.len > 0:
     let alertClass = if isError: "alert-error" else: "alert-success"
-    body.add("    <div class=\"alert " & alertClass & "\">" & message & "</div>\n")
+    body.add("    <div class=\"alert " & alertClass & "\">" & escapeHtml(message) & "</div>\n")
   body.add("    <h3 style=\"margin-bottom:1rem;font-size:1rem\">Change Password</h3>\n")
   body.add("    <form method=\"POST\" action=\"/settings/password\">\n")
   body.add("      <input type=\"hidden\" name=\"csrf_token\" value=\"" & csrfToken & "\">\n")

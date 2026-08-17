@@ -99,6 +99,7 @@ proc startChild*(supervisor: var ProcessSupervisor, appConfig: AppConfig,
 proc stopChild*(supervisor: var ProcessSupervisor, appId: int64,
                 timeoutMs: int = 5000): bool =
   ## Stop a child process. Sends SIGTERM, waits up to timeoutMs, then SIGKILL.
+  ## Uses waitForExit(timeout) to avoid blocking the event loop with a sleep loop.
   ## Returns true if the process was stopped.
   if not supervisor.children.hasKey(appId):
     return false
@@ -112,14 +113,14 @@ proc stopChild*(supervisor: var ProcessSupervisor, appId: int64,
   try:
     if child.process.running():
       child.process.terminate()
-      # Wait for up to timeout
-      let startTime = epochTime()
-      while child.process.running():
-        let elapsed = (epochTime() - startTime) * 1000
-        if elapsed > timeoutMs.float:
-          child.process.kill()
-          break
-        sleep(100)
+      # Use waitForExit with timeout instead of a polling loop with sleep.
+      # This blocks once for up to timeoutMs but avoids repeated sleep(100) calls.
+      # TODO: For full async support in v2, move this to a worker thread.
+      discard child.process.waitForExit(timeout = timeoutMs)
+      if child.process.running():
+        # Process did not exit within timeout, force kill
+        child.process.kill()
+        discard child.process.waitForExit(timeout = 1000)
     child.status = csStopped
     supervisor.children[appId] = child
     return true
