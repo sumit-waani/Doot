@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Auth schema block codegen and email verification stub. Generate users table DDL from the parsed auth AST node, integrate with the DDL generation pipeline, ensure the auth block in app.do properly generates the users table schema. Add email verification scaffolding (mark unverified on signup, stub enqueue for verification email). Update nimble test task to include test_auth.nim.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Update src/doot/ddl.nim: add proc generateAuthDDL*(auth: DootNode): string that generates the users table CREATE TABLE statement based on the nkAuth AST node fields (roles determines if role column is included, emailVerification determines if email_verified column is included).",
     "Update src/doot/ddl.nim: update generateAllDDL to also generate auth DDL if schema.schemaAuth is not nil.",
@@ -25,5 +25,5 @@
     "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c -r tests/test_parser.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All 109 auth tests pass (36 crypto + 60 auth + 13 email verification tokens). generateAuthDDL conditionally includes role column (only when authRoles.len > 0) and email_verified column (only when emailVerification is true). The generateAllDDL now appends auth DDL after table DDLs when schemaAuth is not nil. Email verification tokens use the same HMAC signing approach as session cookies (userId.hexSignature format). Updated nimble test task with --passL:-largon2 --passL:-lssl --passL:-lcrypto flags for test_auth, test_http_integration, and test_server_e2e."
 }
