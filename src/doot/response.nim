@@ -2,6 +2,9 @@
 ## Provides DootResponse type and constructor procs for common response patterns.
 
 import std/[tables]
+import renderer
+
+export renderer
 
 type
   DootResponse* = object
@@ -16,12 +19,29 @@ proc newResponse*(status: int, body: string,
   DootResponse(status: status, headers: headers, body: body)
 
 proc renderResponse*(templatePath: string,
-                     locals: Table[string, string] = initTable[string, string]()): DootResponse =
-  ## Stub renderer: returns placeholder HTML mentioning the template path.
-  ## Full template engine is Phase 4.
-  let html = "<html><body><!-- Template: " & templatePath &
-             " --><p>Template stub: " & templatePath & "</p></body></html>"
-  newResponse(200, html, "text/html; charset=utf-8")
+                     locals: Table[string, DootValue] = initTable[string, DootValue](),
+                     viewsDir: string = "views",
+                     staticDir: string = "static"): DootResponse {.gcsafe.} =
+  ## Render a template and return an HTTP response.
+  ## If the template file cannot be found, returns a stub response.
+  let html = renderTemplate(templatePath, locals, viewsDir, staticDir)
+  if html.len == 0:
+    # Template file not found - return a stub/fallback response
+    let fallback = "<html><body><!-- Template: " & templatePath &
+                   " --><p>Template stub: " & templatePath & "</p></body></html>"
+    return newResponse(200, fallback, "text/html; charset=utf-8")
+  return newResponse(200, html, "text/html; charset=utf-8")
+
+proc renderResponse*(templatePath: string,
+                     locals: Table[string, string],
+                     viewsDir: string = "views",
+                     staticDir: string = "static"): DootResponse {.gcsafe.} =
+  ## Overload that accepts Table[string, string] for backward compatibility.
+  ## Converts string values to DootValue strings before rendering.
+  var dvLocals = initTable[string, DootValue]()
+  for key, val in locals:
+    dvLocals[key] = newDootString(val)
+  return renderResponse(templatePath, dvLocals, viewsDir, staticDir)
 
 proc redirectResponse*(path: string): DootResponse =
   ## Return a 302 redirect response with Location header.
