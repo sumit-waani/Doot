@@ -1,0 +1,7 @@
+{
+  "task_id": "task-phase-6-jobs-scheduler",
+  "task_description": "Implement Phase 6: Jobs and Scheduler for Doot DSL compiler. SQLite-backed job queue, in-process async worker pool, job declaration/dispatch DSL syntax, cron-style scheduler, retry logic, and stuck job detection. All with comprehensive tests.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002"],
+  "blocked_reason": null
+}

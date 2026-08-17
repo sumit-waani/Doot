@@ -624,11 +624,86 @@ proc parseNativeBlock*(p: var Parser): DootNode =
 
   result = newNativeBlockNode(content.strip(), tok.file, tok.line, tok.col)
 
+proc parseJob*(p: var Parser): DootNode =
+  ## Parse: job "name" do |payload| ... end
+  let tok = p.current
+  discard p.advance()  # consume 'job'
+
+  let nameTok = p.expect(tkStringLit)
+
+  p.skipNewlines()
+  discard p.expect(tkDo)
+
+  # Parse optional |param| parameter
+  var param = "payload"
+  if p.current.kind == tkPipe:
+    discard p.advance()  # consume |
+    if p.current.kind == tkIdentifier:
+      param = p.current.value
+      discard p.advance()
+    discard p.expect(tkPipe)
+
+  p.skipNewlines()
+
+  # Parse job body
+  let body = p.parseHandlerBody()
+
+  discard p.expect(tkEnd)
+
+  result = newJobNode(nameTok.value, param, body, tok.file, tok.line, tok.col)
+
+proc parseSchedule*(p: var Parser): DootNode =
+  ## Parse: schedule "name", every: "interval" do ... end
+  let tok = p.current
+  discard p.advance()  # consume 'schedule'
+
+  let nameTok = p.expect(tkStringLit)
+
+  # Parse every: "interval"
+  var interval = ""
+  if p.current.kind == tkComma:
+    discard p.advance()  # consume comma
+    if p.current.kind == tkIdentifier and p.current.value == "every":
+      discard p.advance()  # consume 'every'
+      discard p.expect(tkColon)
+      let intervalTok = p.expect(tkStringLit)
+      interval = intervalTok.value
+    else:
+      p.addError("Expected 'every:' option in schedule declaration")
+
+  p.skipNewlines()
+  discard p.expect(tkDo)
+  p.skipNewlines()
+
+  # Parse schedule body
+  let body = p.parseHandlerBody()
+
+  discard p.expect(tkEnd)
+
+  result = newScheduleNode(nameTok.value, interval, body, tok.file, tok.line, tok.col)
+
 proc parseStatementStartingWithIdent*(p: var Parser): DootNode =
   ## Parse a statement that starts with an identifier.
-  ## Could be: assignment (x = expr), db query (db.table.method(...)), or expression.
+  ## Could be: assignment (x = expr), db query (db.table.method(...)),
+  ## enqueue statement, or expression.
   let identTok = p.current
   discard p.advance()
+
+  # Check for enqueue: enqueue "job_name", key: value, ...
+  if identTok.value == "enqueue":
+    let nameTok = p.expect(tkStringLit)
+    var args: seq[KeyValuePair] = @[]
+    while p.current.kind == tkComma:
+      discard p.advance()  # consume comma
+      if p.current.kind == tkIdentifier:
+        let keyTok = p.advance()
+        discard p.expect(tkColon)
+        let value = p.parseExpression()
+        args.add(KeyValuePair(key: keyTok.value, value: value))
+      else:
+        break
+    result = newEnqueueNode(nameTok.value, args, identTok.file, identTok.line, identTok.col)
+    return
 
   # Check for assignment: ident = expr
   if p.current.kind == tkAssign:
@@ -1114,6 +1189,10 @@ proc parseApp*(p: var Parser): DootNode =
       result.appRoutes.add(p.parseGroup())
     of tkNative:
       result.appRoutes.add(p.parseNativeBlock())
+    of tkJob:
+      result.appRoutes.add(p.parseJob())
+    of tkSchedule:
+      result.appRoutes.add(p.parseSchedule())
     of tkEof:
       break
     of tkNewline:

@@ -1,0 +1,33 @@
+{
+  "id": "FEAT-001",
+  "type": "fix",
+  "description": "Address 5 correctness and safety issues identified in code review for src/doot/jobs.nim: phantom claim race, retryJob not resetting attempts, failJob dead maxAttempts parameter, scheduler duplicate insertion, and worker loop not verifying claim.",
+  "status": "completed",
+  "steps": [
+    "1. Fix phantom claim race in claimNextJob: use execAffectedRows and check if affected == 0 after the UPDATE, return none(JobRecord) if the lock failed.",
+    "2. Fix retryJob not resetting attempts: add 'attempts = 0' to the UPDATE in retryJob so manually retried jobs get a fresh retry budget.",
+    "3. Remove dead maxAttempts parameter from failJob: the proc always reads max_attempts from the DB row, so the parameter is misleading. Remove it and update all callers.",
+    "4. Add dedup guard in schedulerLoop: before inserting a scheduled job, check if a pending job of the same type already exists.",
+    "5. Add claim verification in workerLoop: after claiming a job, verify its status is 'running' in the DB before executing the handler.",
+    "6. Update tests to remove maxAttempts argument from failJob calls.",
+    "7. Add test for retryJob followed by failure (verifying attempts reset gives full retry budget).",
+    "8. Add tests for claim verification (phantom claim protection).",
+    "9. Add test for scheduler dedup guard."
+  ],
+  "acceptance_criteria": [
+    "claimNextJob returns none when the UPDATE affects 0 rows (phantom claim protection)",
+    "retryJob resets attempts to 0 so retried jobs get full max_attempts budget",
+    "failJob signature has no maxAttempts parameter - always uses DB value",
+    "schedulerLoop does not insert duplicate pending jobs for the same job_type",
+    "workerLoop verifies claimed job status before executing handler",
+    "All tests pass including new tests for retry+failure and claim verification",
+    "Existing tests (lexer, parser) still pass"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc -r tests/test_jobs.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_parser.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "Used execAffectedRows from db_connector/db_sqlite instead of separate exec + changes() call for cleaner claim verification. DbConn is PSqlite3 so changes() from sqlite3 module would also work but execAffectedRows combines both operations."
+}
