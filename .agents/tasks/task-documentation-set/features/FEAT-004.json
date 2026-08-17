@@ -1,0 +1,22 @@
+{
+  "id": "FEAT-004",
+  "type": "docs",
+  "description": "Create the implementation plan: implementation-plan.md. This is the phased build plan organized around 'what unblocks what', with clear deliverables and exit criteria per phase.",
+  "status": "completed",
+  "steps": [
+    "Create docs/implementation-plan.md covering multiple phases organized by dependency order: Phase 1 (Foundation) - handwritten recursive-descent parser for .do files, AST definition, basic Nim codegen skeleton; Phase 2 (Schema & Database) - schema parsing, SQLite table generation, db.<table>.* query interface codegen, migration diffing and file generation; Phase 3 (HTTP & Routing) - route parsing and registration, ctx object, handler codegen, static file serving from static/ dir; Phase 4 (Templates) - template parser (Pug-style whitespace-significant), inheritance/blocks/partials, expression evaluation and auto-escaping, HTMX embedding; Phase 5 (Auth & Sessions) - auth schema block, session store (SQLite-backed), signed cookies, built-in routes, role system, default-deny enforcement; Phase 6 (Jobs & Scheduler) - job queue table, worker pool, scheduler syntax, retry logic; Phase 7 (CLI) - doot new scaffolding, doot dev with file watching + recompile, error reporting; Phase 8 (dootd) - --prod mode, dashboard UI, deploy flow, GitHub integration, cgroups isolation, host-header routing. Each phase should have clear deliverables, exit criteria, and estimated complexity."
+  ],
+  "acceptance_criteria": [
+    "docs/implementation-plan.md exists with clearly phased plan",
+    "Phases are ordered by dependency (parser before codegen, schema before migrations, routes before auth)",
+    "Each phase has deliverables and exit criteria",
+    "Plan is practical and buildable",
+    "Plan references actual technical decisions from the spec (Nim, handwritten parser, SQLite, etc.)"
+  ],
+  "verification": [
+    "Verify file exists: ls docs/implementation-plan.md",
+    "Verify file is non-empty and contains multiple phase sections"
+  ],
+  "blocked_reason": null,
+  "findings": "Created docs/implementation-plan.md (828 lines). 8 phases organized by dependency order. Each phase includes: overview, key deliverables, dependencies, estimated complexity, exit criteria, and risks/notes. Includes phase summary table, dependency graph, cross-cutting concerns, and decision log."
+}

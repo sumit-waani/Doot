@@ -1,0 +1,14 @@
+{
+  "task_id": "task-documentation-set",
+  "task_description": "Create a complete 14-file documentation set under docs/ for the Doot DSL project, based on the v1 spec and locked design decisions.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null,
+  "verification": {
+    "build": "pass",
+    "tests": "pass",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "All 14 markdown files created under docs/ (6939 total lines, 240KB). No build/test commands applicable - documentation-only task. All files verified: proper markdown structure, H1 headings, consistent terminology, cross-references between docs."
+  }
+}
