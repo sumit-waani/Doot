@@ -168,20 +168,24 @@ Contains functions that are reused across multiple feature files:
 ```
 # helpers.do
 
-def slugify(text)
-  text.downcase.gsub(/[^a-z0-9]+/, "-").trim("-")
+def format_currency(cents)
+  dollars = cents / 100
+  remainder = cents % 100
+  "$#{dollars}.#{remainder}"
 end
 
-def truncate(text, length: 100)
-  if text.length > length
-    text[0..length] + "..."
+def excerpt(post)
+  if post.body.length > 200
+    truncate(post.body, 200) + " [read more]"
   else
-    text
+    post.body
   end
 end
 ```
 
-This is the designated place for shared logic. There is no generic "shared model layer" or "service objects" pattern. If a pattern repeats across features, it goes in `helpers.do`.
+This is the designated place for shared application-specific logic. There is no generic "shared model layer" or "service objects" pattern. If a pattern repeats across features, it goes in `helpers.do`.
+
+> **Note:** Common string utilities like `slugify` and `truncate` are already available as [stdlib builtins](stdlib.md) and do not need to be redefined here. Use `helpers.do` for application-specific helpers that combine builtins or encode domain logic.
 
 ### `views/` - Templates
 
@@ -290,7 +294,7 @@ All secrets and credentials live here. Never hardcoded in `.do` files.
 SESSION_SECRET=a-long-random-string
 SMTP_HOST=smtp.example.com
 SMTP_USER=noreply@example.com
-SMTP_PASS=password123
+SMTP_PASSWORD=password123
 ```
 
 - Referenced in `app.do` via `env("KEY")`
@@ -381,7 +385,7 @@ If a query or function is reused across multiple feature files, it goes in `help
 | Database tables | Plural, snake_case | `"posts"`, `"user_profiles"` |
 | Database fields | Singular, snake_case | `"title"`, `"created_at"`, `"user_id"` |
 | Migration files | Sequential number + description | `001_create_posts.sql`, `002_add_comments.sql` |
-| Helpers | Verb or descriptive name | `slugify`, `truncate`, `format_date` |
+| Helpers | Verb or descriptive name | `format_currency`, `excerpt`, `format_date` |
 | Job names | Verb phrase, snake_case | `"send_welcome_email"`, `"generate_report"` |
 | Environment variables | UPPER_SNAKE_CASE | `SESSION_SECRET`, `SMTP_HOST` |
 

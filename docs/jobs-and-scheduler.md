@@ -77,11 +77,11 @@ Jobs are declared using the `job` keyword in any `.do` file:
 ```
 # jobs.do
 job "send_welcome_email" do |payload|
-  email = payload["email"]
+  recipient = payload["email"]
   name = payload["name"]
 
-  send_email(
-    to: email,
+  email.send(
+    to: recipient,
     subject: "Welcome to our app!",
     body: "Hi #{name}, thanks for signing up!"
   )
@@ -102,7 +102,7 @@ job "generate_report" do |payload|
   report_type = payload["type"]
   user_id = payload["user_id"]
 
-  data = db.orders.where(user_id: user_id)
+  data = db.orders.all(where: "user_id = #{user_id}")
   # Generate and store the report...
 end
 ```
@@ -161,7 +161,7 @@ This is equivalent to inserting a row into the `_doot_jobs` table with:
 To schedule a job for later execution:
 
 ```
-enqueue "send_reminder", user_id: 42, delay: 24.hours
+enqueue "send_reminder", user_id: 42, delay: "24 hours"
 ```
 
 The `delay` parameter sets `run_at` to the current time plus the specified duration. The job will not be picked up by a worker until that time arrives.
@@ -236,22 +236,28 @@ The scheduler allows you to run jobs on a recurring schedule. It uses the same j
 # jobs.do
 schedule "daily_cleanup", every: "1 day", at: "03:00" do
   # Delete old sessions
-  db.sessions.where("created_at < ?", 30.days.ago).delete_all
+  old_sessions = db.sessions.all(where: "created_at < date('now', '-30 days')")
+  each session in old_sessions
+    db.sessions.delete(session)
+  end
 
   # Clean up expired uploads
-  db.uploads.where(status: "expired").delete_all
+  expired_uploads = db.uploads.all(where: "status = 'expired'")
+  each upload in expired_uploads
+    db.uploads.delete(upload)
+  end
 end
 
 schedule "weekly_report", every: "1 week", at: "monday 09:00" do
-  users = db.users.where(role: "admin")
+  users = db.users.all(where: "role = 'admin'")
   each user in users
     enqueue "generate_report", type: "weekly", user_id: user.id
   end
 end
 
 schedule "hourly_check", every: "1 hour" do
-  # Check for stale jobs, send notifications, etc.
-  stale = db.posts.where(status: "draft", updated_at: 7.days.ago)
+  # Check for stale drafts, send notifications
+  stale = db.posts.all(where: "status = 'draft' AND updated_at < date('now', '-7 days')")
   each post in stale
     enqueue "send_stale_reminder", post_id: post.id, user_id: post.user_id
   end
@@ -422,7 +428,7 @@ end
 ```
 # jobs.do
 job "send_welcome_email" do |payload|
-  send_email(
+  email.send(
     to: payload["email"],
     subject: "Welcome!",
     body: "Thanks for joining. Get started by creating your first post."
@@ -431,7 +437,7 @@ end
 
 job "export_post_pdf" do |payload|
   post = db.posts.find(payload["post_id"])
-  db.posts.update(post.id, export_status: "processing")
+  db.posts.update(post, export_status: "processing")
 
   native do
     let html = renderPostToHtml(post)
@@ -439,13 +445,15 @@ job "export_post_pdf" do |payload|
     writeFile("uploads/exports/post_#{post.id}.pdf", pdf)
   end
 
-  db.posts.update(post.id, export_status: "ready")
+  # Re-fetch to get the updated record for the next update
+  post = db.posts.find(payload["post_id"])
+  db.posts.update(post, export_status: "ready")
 end
 
 job "cleanup_old_exports" do |payload|
-  old_exports = db.posts.where("export_status = 'ready' AND updated_at < ?", 7.days.ago)
+  old_exports = db.posts.all(where: "export_status = 'ready' AND updated_at < date('now', '-7 days')")
   each post in old_exports
-    db.posts.update(post.id, export_status: "none")
+    db.posts.update(post, export_status: "none")
     # Delete the file too
     native do
       removeFile("uploads/exports/post_#{post.id}.pdf")
@@ -460,9 +468,9 @@ end
 schedule "daily_digest", every: "1 day", at: "08:00" do
   users = db.users.all()
   each user in users
-    recent_posts = db.posts.where("created_at > ?", 1.day.ago)
-    if recent_posts.any?
-      enqueue "send_digest_email", user_id: user.id, post_count: recent_posts.count
+    recent_posts = db.posts.all(where: "created_at > date('now', '-1 day')")
+    if !recent_posts.empty?
+      enqueue "send_digest_email", user_id: user.id, post_count: count(recent_posts)
     end
   end
 end

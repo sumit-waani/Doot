@@ -543,7 +543,7 @@ response = http.delete("https://api.example.com/subscriptions/#{sub_id}",
 
 ### `email.send(options)`
 
-Sends an email. Requires SMTP configuration in `.env` (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`).
+Sends an email. Requires SMTP configuration in `.env` (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`).
 
 ```
 email.send(

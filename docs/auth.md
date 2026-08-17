@@ -132,15 +132,21 @@ Session data is available via `ctx.session`:
 
 ```
 route POST "/preferences" do |ctx|
-  ctx.session["theme"] = ctx.form["theme"]
+  ctx.session.set("theme", ctx.form["theme"])
   redirect "/settings"
 end
 
 route GET "/settings" do |ctx|
-  theme = ctx.session["theme"] || "light"
+  theme = ctx.session.get("theme")
   render "settings/index", theme: theme
 end
 ```
+
+| Method | Description |
+|--------|-------------|
+| `ctx.session.get(key)` | Retrieve a session value (returns nil if not set) |
+| `ctx.session.set(key, value)` | Store a value in the session |
+| `ctx.session.delete(key)` | Remove a value from the session |
 
 ---
 
@@ -156,7 +162,7 @@ Every request handler has access to `ctx.current_user`. This is the authenticate
 ```
 route GET "/dashboard", auth: required do |ctx|
   # ctx.current_user is guaranteed to exist here
-  posts = db.posts.where(user_id: ctx.current_user.id)
+  posts = db.posts.all(where: "user_id = #{ctx.current_user.id}")
   render "dashboard/index", posts: posts, user: ctx.current_user
 end
 
@@ -260,7 +266,8 @@ group auth: required, role: "admin" do
   end
 
   route DELETE "/admin/users/:id" do |ctx|
-    db.users.delete(ctx.params["id"])
+    user = db.users.find(ctx.params["id"])
+    db.users.delete(user)
     redirect "/admin/users"
   end
 end
@@ -441,7 +448,8 @@ end
 
 group auth: required, role: "admin" do
   route DELETE "/posts/:id" do |ctx|
-    db.posts.delete(ctx.params["id"])
+    post = db.posts.find(ctx.params["id"])
+    db.posts.delete(post)
     redirect "/posts"
   end
 end
