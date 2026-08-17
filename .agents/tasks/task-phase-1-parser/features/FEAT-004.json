@@ -1,0 +1,35 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Create example .do files in examples/blog/ that exercise all parser features, implement multi-file resolution (parseProject entry point), and write integration tests that parse the complete blog example into a unified AST.",
+  "status": "pending",
+  "steps": [
+    "Create examples/blog/app.do with: config block (port, session_secret with env()), schema block containing auth :users with roles, table 'posts' with multiple fields of different types and constraints plus timestamps, table 'comments' with fields and timestamps. Mount directives: mount 'posts', mount 'comments'.",
+    "Create examples/blog/posts.do with: a group block (auth: required) containing routes for GET /posts/new (render), POST /posts (db.posts.create with form data, if/else on result.ok?, redirect on success, render with errors on failure), PUT /posts/:id (find, update, if/else), DELETE /posts/:id (find, delete, redirect). Public routes: GET /posts (db.posts.all with where/order, render), GET /posts/:slug (db.posts.find_by, db.comments.all, render with multiple locals).",
+    "Create examples/blog/comments.do with: at least one route that demonstrates db.comments.create and redirect with string interpolation.",
+    "Create examples/blog/views/layouts/base.do with: doctype, html/head/body structure, title with block default (block title || 'Blog'), block head, style-embed 'app.css', nav with if/else on ctx.current_user, main with block content, footer with text.",
+    "Create examples/blog/views/posts/index.do with: extends 'layouts/base', block title, block content with h1, if posts.empty? with fallback text, else with each post in posts containing div.post-card with nested elements, class/id shorthand, expression output (= post.title), string interpolation in attributes (href='/posts/#{post.id}').",
+    "Create examples/blog/views/posts/show.do with: extends 'layouts/base', block title (= post.title), block head with meta tag using interpolation, block content with article containing elements, if/else for current_user actions, each for comments, partial 'comments/form' with locals.",
+    "Implement the multi-file resolver in src/doot/resolver.nim (or within parser.nim): parseProject(rootDir: string) proc that: (1) parses app.do as entry point, (2) for each MountNode found, resolves the file path (e.g., mount 'posts' -> posts.do in same directory), parses it, (3) scans views/ directory recursively for .do files, parses each in template mode, (4) returns a unified AppNode containing all parsed ASTs.",
+    "Write integration tests in tests/test_integration.nim that: parse the complete examples/blog/ project using parseProject, verify the unified AST contains the expected config, schema with 2 tables + auth, mount references resolved to parsed route files, template files parsed with correct extends/block structure. Verify no parse errors are produced.",
+    "Write tests that verify error reporting on malformed input: a .do file with a misspelled keyword produces an error with suggestion, a template with tabs produces an error, a file with multiple errors reports all of them, errors include correct file/line/column.",
+    "Ensure 'nimble test' runs all test files (test_lexer, test_parser, test_integration) and they all pass."
+  ],
+  "acceptance_criteria": [
+    "examples/blog/app.do exists with schema, config, auth, mount directives",
+    "examples/blog/posts.do exists with routes, groups, handler bodies, db queries, if/else, each",
+    "examples/blog/views/layouts/base.do exists with full layout template using extends, blocks, control flow",
+    "examples/blog/views/posts/index.do exists with list template using extends, each, if, element shorthand",
+    "examples/blog/views/posts/show.do exists with detail template using extends, partials, expression output",
+    "parseProject('examples/blog') produces a unified AST with no errors",
+    "The unified AST contains config, schema (2 tables + auth), resolved mounts (posts.do routes), and template ASTs",
+    "Error reporting tests pass: misspelled keywords get suggestions, tabs get rejected, multiple errors reported",
+    "All tests pass with nimble test"
+  ],
+  "verification": [
+    "Run 'nimble test' and confirm all tests pass (lexer, parser, integration)",
+    "Run 'nimble build' and confirm compilation succeeds"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

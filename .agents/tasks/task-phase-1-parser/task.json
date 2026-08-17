@@ -1,0 +1,7 @@
+{
+  "task_id": "task-phase-1-parser",
+  "task_description": "Install Nim and implement Phase 1: Parser Foundation for the Doot DSL compiler. This includes a whitespace-sensitive lexer with three parse modes, complete AST node definitions, a recursive-descent parser with expression precedence, error reporting with suggestions, multi-file resolution, comprehensive tests, and example .do files.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null
+}

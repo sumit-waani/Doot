@@ -1,0 +1,41 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Define all AST node types and implement the recursive-descent parser that produces a well-typed AST from the token stream. Includes expression parsing with operator precedence, all route/schema constructs, template constructs, and native blocks.",
+  "status": "pending",
+  "steps": [
+    "Create src/doot/ast.nim with all AST node type definitions using Nim object variants (or ref objects with inheritance). Define: AppNode (config, schema, mounts, routes/groups), ConfigNode (directives as key-value pairs), SchemaNode (tables seq, auth option), TableNode (name, fields, hasTimestamps), FieldNode (name, fieldType, constraints), AuthNode (model, roles, emailVerification), MountNode (path string).",
+    "Define route/handler AST nodes: RouteNode (httpMethod, path, authOption, roleOption, handlerBody), GroupNode (authOption, roleOption, children seq of RouteNode), HandlerBodyNode (statements seq), RenderNode (templatePath, locals seq of key-value), RedirectNode (path expression), DbQueryNode (table, method, args), AssignmentNode (varName, expression), IfNode (condition, thenBranch, elseBranch), EachNode (itemVar, collection, body), NativeBlockNode (rawContent string).",
+    "Define template AST nodes: TemplateNode (extendsPath option, blocks, body), ExtendsNode (layoutPath), BlockDefNode (name, defaultValue option, content), ElementNode (tagName, classes seq, id option, attributes seq, children seq, textContent option, expressionOutput option), ExpressionOutputNode (expression, escaped bool), TextNode (content), PartialNode (path, locals), TemplateIfNode (condition, thenContent, elseContent), TemplateEachNode (itemVar, collection, body).",
+    "Define expression AST nodes: StringLiteralNode (value, interpolations), IntegerLiteralNode (value), BooleanLiteralNode (value), NilLiteralNode, IdentifierNode (name), MemberAccessNode (object, property), MethodCallNode (object, methodName, args), IndexAccessNode (object, index), BinaryOpNode (left, op, right), UnaryOpNode (op, operand), ArrayLiteralNode (elements).",
+    "Create src/doot/parser.nim with a Parser type holding: tokens (seq[Token]), pos (int), currentFile (string), errors (seq of ParseError with file/line/col/message/suggestion).",
+    "Implement core parser infrastructure: current() returns current token, peek() looks ahead, advance() moves forward, expect(kind) consumes and validates, match(kind) optionally consumes, skipNewlines(), error recovery (skip to next top-level keyword on error).",
+    "Implement top-level parsing: parseApp() handles config/schema/mount/route/group at the top level. parseConfig() parses 'config do ... end' with key-value directives including env() calls. parseSchema() parses 'schema do ... end' containing table and auth blocks.",
+    "Implement schema parsing: parseTable() handles 'table \"name\" do ... end' with field declarations and timestamps. parseField() handles 'field \"name\", :type, constraint: value, ...' with all constraint options. parseAuth() handles 'auth :model do ... end' with roles and email_verification.",
+    "Implement route/handler parsing: parseRoute() handles 'route METHOD \"/path\", options do |ctx| ... end'. parseGroup() handles 'group options do ... end' containing routes. parseHandlerBody() parses statements until 'end': assignments, if/else, each, render, redirect, db queries, native blocks.",
+    "Implement handler statement parsing: parseAssignment() for 'var = expr'. parseIf() for 'if condition ... else ... end'. parseEach() for 'each item in collection ... end'. parseRender() for 'render \"path\", key: value, ...'. parseRedirect() for 'redirect \"path\"'. parseDbQuery() for 'db.table.method(args)'. parseNativeBlock() for 'native do ... end' (raw content).",
+    "Implement template parsing: parseTemplate() detects template mode files, handles 'extends', 'block', element lines. parseExtends() for 'extends \"path\"'. parseBlockDef() for 'block name'. parseElement() for 'tag.class#id attr=val children' with indentation-based nesting. parsePartial() for 'partial \"path\", locals'. parseTemplateIf() and parseTemplateEach() for template-mode control flow.",
+    "Implement expression parsing with operator precedence (Pratt parser or precedence climbing): parsePrimaryExpr() handles literals, identifiers, parenthesized expressions, array literals, unary operators. parseMemberAccess() handles dot notation (obj.prop, obj.method(args), obj[key]). parseBinaryExpr() handles comparison and logical operators with correct precedence: || (lowest) < && < == != < > < >= <= (highest comparison). Handle method calls with ? suffix (ok?, empty?).",
+    "Implement mount resolution: parseMountDirective() records mount paths. The parser should have a parseProject() entry point that takes a root directory, parses app.do, follows mount directives to parse feature files, and scans views/ directory for template files.",
+    "Implement error recovery: when an unexpected token is encountered, record a ParseError with file, line, column, descriptive message, and optional suggestion. Then skip tokens until the next recognizable construct (next 'route', 'end', 'table', top-level keyword, or dedent in templates). Continue parsing to accumulate multiple errors.",
+    "Implement actionable error suggestions: for misspelled keywords (Levenshtein distance <= 2 from a known keyword, suggest the keyword). For unknown types, list valid types. For missing 'end', suggest where the block started.",
+    "Write comprehensive tests in tests/test_parser.nim and tests/test_ast.nim: parse a config block and verify AST structure, parse a schema with tables/fields/auth and verify, parse routes with various options and verify, parse handler bodies with assignments/if/each/render/redirect/db queries, parse template files with extends/blocks/elements/control flow, parse expressions with correct precedence, verify error messages include file/line/col and suggestions, verify multi-error reporting."
+  ],
+  "acceptance_criteria": [
+    "Can parse a complete app.do with config, schema (tables, fields, auth), and mount directives",
+    "Can parse feature files with routes, groups, and full handler bodies (assignments, if/else, each, render, redirect, db queries)",
+    "Can parse template files with extends, named blocks, elements with class/id shorthand, attributes, partials, if/else, each",
+    "Can parse native do ... end blocks preserving raw content",
+    "Expression parsing respects operator precedence (e.g., a && b || c parses as (a && b) || c)",
+    "Member access chains work: db.posts.find(ctx.params[\"id\"])",
+    "Error messages include file, line, column, and actionable suggestions",
+    "Multiple errors are reported in a single parse pass",
+    "All parser tests pass with nimble test"
+  ],
+  "verification": [
+    "Run 'nimble test' and confirm all parser tests pass",
+    "Run 'nimble build' and confirm compilation succeeds"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

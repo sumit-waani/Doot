@@ -1,0 +1,22 @@
+{
+  "project_type": "Nim compiler/DSL parser for the Doot web framework",
+  "language": "Nim",
+  "build_system": "nimble (Nim package manager)",
+  "test_framework": "Nim unittest module",
+  "build_command": "cd /projects/sandbox/Doot && nimble build",
+  "test_command": "cd /projects/sandbox/Doot && nimble test",
+  "verification_instructions": "1. Run 'nimble build' to confirm compilation. 2. Run 'nimble test' to confirm all tests pass. 3. Verify the parser can parse the example blog files in examples/blog/.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "1. Install Nim via choosenim: curl https://nim-lang.org/choosenim/init.sh -sSf | sh. 2. Add ~/.nimble/bin to PATH. 3. Verify with 'nim --version' and 'nimble --version'.",
+  "environment_constraints": "Nim is NOT pre-installed. Must install via choosenim or direct download. Network is OPEN_INTERNET so package installs are fine.",
+  "contribution_requirements": "Work on branch feat/phase-1-parser branched from docs/architecture-and-implementation-plan. Follow the spec exactly as described in docs/.",
+  "key_patterns": "Handwritten recursive-descent parser with three parse modes (route/schema, template, native). Whitespace-significant templates (Pug-style, 2-space indent, spaces only). Keyword-delimited blocks (do...end) for routes/schema. String interpolation via #{}. Multi-file resolution starting from app.do. Error recovery to report multiple errors.",
+  "relevant_files": [
+    "docs/compiler-pipeline.md",
+    "docs/dsl-spec.md",
+    "docs/implementation-plan.md",
+    "docs/templates.md",
+    "docs/project-structure.md"
+  ],
+  "directory_structure": "Root: /projects/sandbox/Doot/. Currently has docs/ (14 design docs), doot-v1-spec.md, README.md. Implementation will create: src/ (compiler source), tests/ (unit tests), examples/ (sample .do projects), doot.nimble (project file)."
+}

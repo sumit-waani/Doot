@@ -1,0 +1,10 @@
+# Compiled binaries
+/doot
+/tests/test_lexer
+
+# Nim cache
+nimcache/
+nimbledeps/
+
+# OS files
+.DS_Store
