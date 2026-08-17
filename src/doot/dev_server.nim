@@ -2,7 +2,7 @@
 ## Manages the compile-restart cycle: parse .do files, detect schema changes,
 ## generate migrations, and restart the server on file changes.
 
-import std/[os, osproc, times, strutils]
+import std/[os, osproc, times, monotimes, strutils]
 import watcher, error_format
 import lexer, parser, ast
 import migration_diff, migration_gen, schema_snapshot
@@ -17,6 +17,7 @@ type
 
   DevServer* = object
     state*: DevServerState
+    running*: bool
     projectDir*: string
     buildDir*: string
     fileWatcher*: FileWatcher
@@ -30,6 +31,7 @@ proc newDevServer*(projectDir: string, port: int = 3000): DevServer =
   let config = newWatcherConfig()
   result = DevServer(
     state: dsStarting,
+    running: false,
     projectDir: projectDir,
     buildDir: buildDir,
     fileWatcher: newFileWatcher(projectDir, config),
@@ -144,6 +146,7 @@ proc startDevLoop*(server: var DevServer) =
   ## This is the entry point for 'doot dev'.
   server.ensureBuildDir()
   server.fileWatcher.recordBaseline()
+  server.running = true
 
   # Initial parse
   let (appAst, errors) = server.parseProject()
@@ -161,8 +164,7 @@ proc startDevLoop*(server: var DevServer) =
     echo formatDevBanner(server.port)
 
   # Main watch loop
-  var running = true
-  while running:
+  while server.running:
     sleep(server.fileWatcher.config.pollIntervalMs)
 
     let changes = server.fileWatcher.detectChanges()
@@ -170,7 +172,7 @@ proc startDevLoop*(server: var DevServer) =
       let pending = server.fileWatcher.getPendingChanges()
       if pending.len > 0:
         echo formatRecompiling()
-        let startTime = cpuTime()
+        let startTime = getMonoTime()
 
         # Stop current server
         server.stopServer()
@@ -187,7 +189,7 @@ proc startDevLoop*(server: var DevServer) =
             let schemaChanges = server.checkSchemaChanges(newAst)
             server.handleSchemaChanges(schemaChanges)
 
-          let elapsed = (cpuTime() - startTime) * 1000.0
+          let elapsed = (getMonoTime() - startTime).inMilliseconds.float
           echo formatRecompileSuccess(elapsed)
           server.state = dsRunning
     elif changes.len == 0 and server.fileWatcher.debouncing:
@@ -196,6 +198,7 @@ proc startDevLoop*(server: var DevServer) =
 
 proc shutdownDevServer*(server: var DevServer) =
   ## Gracefully shut down the dev server.
+  server.running = false
   server.stopServer()
   server.state = dsStopped
   echo "\n" & green("  Server stopped.") & "\n"

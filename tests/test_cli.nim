@@ -317,7 +317,7 @@ suite "File Watcher":
     check ".doot-build" in config.excludeDirs
     check "migrations" in config.excludeDirs
     check "uploads" in config.excludeDirs
-    check "static" in config.excludeDirs
+    check "static" notin config.excludeDirs
 
   test "scan finds .do files":
     writeFile("test_watch_dir/app.do", "test content")
@@ -354,12 +354,13 @@ suite "File Watcher":
     let files = w.scanFiles()
     check files.len == 0
 
-  test "scan excludes static directory":
+  test "scan watches static directory":
     createDir("test_watch_dir/static")
-    writeFile("test_watch_dir/static/app.do", "test")
+    writeFile("test_watch_dir/static/app.css", "body { }")
     var w = newFileWatcher("test_watch_dir")
     let files = w.scanFiles()
-    check files.len == 0
+    check files.len == 1
+    check "app.css" in files[0]
 
   test "record baseline stores mtimes":
     writeFile("test_watch_dir/app.do", "content")

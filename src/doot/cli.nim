@@ -119,7 +119,10 @@ proc runNew*(args: seq[string]): int =
   printWelcomeMessage(name)
   return 0
 
-var gDevServer*: ptr DevServer = nil
+## gDevServer holds a pointer to the stack-allocated DevServer in runDev.
+## It is only valid while runDev is on the call stack. The SIGINT handler
+## calls quit(0) after shutdown, so the pointer never outlives the frame.
+var gDevServer: ptr DevServer = nil
 
 proc handleSigint() {.noconv.} =
   ## SIGINT handler for graceful shutdown of the dev server.

@@ -34,9 +34,9 @@ proc newWatcherConfig*(pollIntervalMs: int = 500, debounceMs: int = 150): Watche
   result = WatcherConfig(
     pollIntervalMs: pollIntervalMs,
     debounceMs: debounceMs,
-    watchPatterns: @[".do"],
+    watchPatterns: @[".do", ".css", ".js", ".html"],
     watchPaths: @[".env"],
-    excludeDirs: @[".git", ".doot-build", "migrations", "uploads", "static", "node_modules"]
+    excludeDirs: @[".git", ".doot-build", "migrations", "uploads", "node_modules"]
   )
 
 proc newFileWatcher*(baseDir: string, config: WatcherConfig = newWatcherConfig()): FileWatcher =
