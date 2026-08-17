@@ -2,7 +2,7 @@
   "id": "FEAT-001",
   "type": "feat",
   "description": "Core daemon infrastructure: dootd state management, password generation, systemd service file generation, idempotent re-runs, and the --prod mode switch implementation. This feature builds the foundation that all other Phase 8 features depend on.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create src/doot/dootd_types.nim - Define core types: DootdConfig (data_dir, dashboard_port, router_port, etc.), AppConfig (name, hostname, github_url, pat, branch, env_vars, internal_port, memory_limit, cpu_shares, status), AppStatus enum (asRunning, asStopped, asError, asDeploying), DootdState (config, apps list, password_hash, initialized flag). Also define constants for default ports, data directories, internal port range start (3001).",
     "Create src/doot/dootd_state.nim - Implement state persistence using SQLite (similar to session.nim pattern). Functions: initDootdDb(dataDir) creates/opens SQLite db with tables for config (key-value), apps (all AppConfig fields), and app_logs (app_id, timestamp, stream stdout/stderr, message). Functions: loadState(db), saveAppConfig(db, app), deleteApp(db, appId), getApps(db), getConfig(db, key), setConfig(db, key, value). The state file lives at dataDir/dootd.db. dataDir defaults to /var/lib/dootd or ~/.dootd in non-root mode.",
@@ -25,5 +25,5 @@
     "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "Added passL flags (argon2, ssl, crypto) to nim.cfg globally since the main binary now imports crypto.nim transitively through dootd_password. All 55 tests pass. Existing test_cli.nim still passes with the nim.cfg change. The insertID proc in db_sqlite requires the SQL query as parameter (not a separate call). getDataDir needed module qualification due to name collision with std/private/osappdirs."
 }
