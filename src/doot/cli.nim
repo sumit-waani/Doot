@@ -2,7 +2,9 @@
 ## Parses command-line arguments and dispatches to the appropriate handler.
 
 import std/os
+import db_connector/db_sqlite
 import scaffold, dev_server, error_format
+import dootd_types, dootd_state, dootd_password, dootd_systemd
 
 type
   CliCommand* = enum
@@ -153,6 +155,70 @@ proc runDev*(args: seq[string]): int =
   gDevServer = nil
   return 0
 
+proc runProd*(flags: seq[string]): int =
+  ## Execute the 'doot --prod' command.
+  ## Initializes the daemon on first run, shows status on subsequent runs.
+  ## Handles --reset-password flag for password recovery.
+  let dataDir = dootd_state.getDataDir()
+  let db = initDootdDb(dataDir)
+  defer: db.close()
+
+  let resetPwd = "--reset-password" in flags
+
+  if resetPwd:
+    let newPwd = resetPassword(db)
+    echo "Admin password has been reset."
+    echo ""
+    echo "New admin password: " & newPwd
+    echo ""
+    echo "Store this password securely. It will not be shown again."
+    return 0
+
+  let alreadyInitialized = isPasswordSet(db)
+
+  if not alreadyInitialized:
+    # First run: generate password and set up
+    let password = generateAdminPassword()
+    hashAndStorePassword(db, password)
+
+    # Store config
+    let binPath = getAppFilename()
+    setConfig(db, "data_dir", dataDir)
+    setConfig(db, "binary_path", binPath)
+    setConfig(db, "dashboard_port", $DefaultDashboardPort)
+    setConfig(db, "router_port", $DefaultRouterPort)
+
+    echo "Doot Production Daemon initialized."
+    echo ""
+    echo "Admin password: " & password
+    echo ""
+    echo "Store this password securely. It will not be shown again."
+    echo "Use --reset-password if you need to generate a new one."
+    echo ""
+    echo "Dashboard: http://localhost:" & $DefaultDashboardPort
+    echo "Data directory: " & dataDir
+    echo ""
+
+    # Try to install systemd service (will fail gracefully in sandboxes)
+    let installed = installService(binPath, dataDir)
+    if installed:
+      echo "Systemd service installed and started."
+    else:
+      echo "Note: Could not install systemd service (requires root)."
+      echo "Service file content generated for manual installation."
+    return 0
+  else:
+    # Already initialized: show status
+    let state = loadState(db)
+    echo "Doot Production Daemon is configured."
+    echo ""
+    echo "Dashboard: http://localhost:" & $state.config.dashboardPort
+    echo "Data directory: " & dataDir
+    echo "Managed apps: " & $state.apps.len
+    echo ""
+    echo "Use --reset-password to generate a new admin password."
+    return 0
+
 proc dispatch*(cliArgs: CliArgs): int =
   ## Dispatch to the appropriate command handler.
   ## Returns the process exit code.
@@ -174,8 +240,7 @@ proc dispatch*(cliArgs: CliArgs): int =
       echo showHelp()
     return 0
   of cmdProd:
-    echo "Production mode is not yet implemented."
-    return 0
+    return runProd(cliArgs.flags)
   of cmdUnknown:
     let cmd = if cliArgs.args.len > 0: cliArgs.args[0] else: ""
     echo red("Error: ") & "Unknown command '" & cmd & "'."
