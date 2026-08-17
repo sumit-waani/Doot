@@ -1,0 +1,7 @@
+{
+  "task_id": "task-phase-7-cli",
+  "task_description": "Implement Phase 7 CLI for the Doot DSL compiler: doot new (scaffolding), doot dev (development server with file watching and automatic recompilation), doot help, error formatting, and file watcher.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001"],
+  "blocked_reason": null
+}

@@ -1,16 +1,15 @@
 ## Doot DSL Compiler
 ## Main entry point for the doot binary.
+## Dispatches CLI commands: new, dev, help.
 
-import doot/lexer
-import doot/parser
-import doot/ast
+import std/os
+import doot/cli
 
 proc main() =
-  echo "Doot DSL Compiler v0.1.0"
-  # Placeholder: parse empty source to verify pipeline works
-  let tokens = tokenize("")
-  let tree = parse(tokens)
-  echo "AST root kind: ", tree.kind
+  let args = commandLineParams()
+  let cliArgs = parseArgs(args)
+  let exitCode = dispatch(cliArgs)
+  quit(exitCode)
 
 when isMainModule:
   main()
