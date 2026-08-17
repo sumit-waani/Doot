@@ -71,7 +71,7 @@ proc sendResponse(req: Request, resp: DootResponse) {.async.} =
     headers.add(key, value)
   await req.respond(HttpCode(resp.status), resp.body, headers)
 
-proc handleRequest(server: DootServer, req: Request) {.async.} =
+proc handleRequest*(server: DootServer, req: Request) {.async.} =
   ## Main request handler: routes the request through the pipeline.
   let parsedUrl = parseUri($req.url)
   let path = parsedUrl.path
