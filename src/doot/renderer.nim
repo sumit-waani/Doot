@@ -575,6 +575,11 @@ proc resolveInheritance*(tmplAst: DootNode, ctx: TemplateContext): string =
     for name, content in bodyBlocks:
       childBlocks[name] = content
 
+    # If we already have blocks from a deeper child (passed via ctx.blocks),
+    # those take priority over our own blocks (deep inheritance support)
+    for name, content in ctx.blocks:
+      childBlocks[name] = content
+
     # Load the parent/layout template
     let layoutPath = ctx.viewsDir / tmplAst.tmplExtends & ".do"
     if not fileExists(layoutPath):

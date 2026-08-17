@@ -1,0 +1,33 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Write comprehensive tests for the template renderer covering all template features: element rendering, expression output (escaped/raw), inheritance, partials, control flow, auto-escaping, style-embed, doctype, HTMX injection, and end-to-end integration with the Phase 3 render call.",
+  "status": "in_progress",
+  "steps": [
+    "Create tests/test_templates.nim with import of unittest, renderer, lexer, parser, ast, response modules",
+    "Suite: 'Renderer - Element Rendering' - test basic tags (div, p, h1), class shorthand (div.post-card, div.card.highlighted), ID shorthand (input#email), combined class+ID (div#sidebar.panel.dark), attributes (a href=\"/posts\" \"All Posts\"), void elements (img, input, br, hr, meta, link), HTMX attributes (button hx-post=\"/vote\" hx-target=\"#count\" \"Vote\")",
+    "Suite: 'Renderer - Expression Output' - test escaped output (h1= post.title with HTML chars), raw output (div!= post.html_body), string interpolation in text (\"Hello #{user.name}\"), interpolation in attributes (a href=\"/posts/#{post.id}\")",
+    "Suite: 'Renderer - Auto-Escaping' - test that < > & \" ' are escaped in = output, test that != bypasses escaping, test interpolation escaping in strings",
+    "Suite: 'Renderer - Inheritance' - test extends with single block, multiple named blocks, default block values (block title || \"Doot App\"), deep inheritance chains (child extends parent extends grandparent), block override replaces parent content",
+    "Suite: 'Renderer - Partials' - test partial inclusion with locals, test that partials do NOT inherit parent scope (explicit locals only), test recursive partials (a partial includes another partial)",
+    "Suite: 'Renderer - Control Flow' - test each loop iteration, test if/else conditional rendering, test if collection.empty? check, test nested control flow (if inside each)",
+    "Suite: 'Renderer - Doctype' - test doctype html renders <!DOCTYPE html>",
+    "Suite: 'Renderer - Style Embed' - test style-embed \"app.css\" reads file and wraps in <style> tag",
+    "Suite: 'Renderer - HTMX Injection' - test that HTMX script tag is auto-injected in layouts with a <head> element",
+    "Suite: 'Renderer - Integration' - test end-to-end render call: create a handler that calls renderResponse with locals, verify complete HTML output with layout inheritance, escaped content, and correct structure",
+    "Add test_templates.nim to doot.nimble test task list"
+  ],
+  "acceptance_criteria": [
+    "All new template tests pass (nim c -r tests/test_templates.nim succeeds)",
+    "Tests cover every exit criterion from Phase 4 spec",
+    "Tests use real template parsing (tokenize in Template mode, parse, then render) not just hand-constructed AST",
+    "Tests verify actual HTML output strings match expected",
+    "All existing 373 tests still pass"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_templates.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim && nim c -r tests/test_parser.nim && nim c -r tests/test_integration.nim && nim c -r tests/test_schema.nim && nim c -r tests/test_query.nim && nim c -r tests/test_migrations.nim && nim c --threads:on --mm:orc -r tests/test_router.nim && nim c --threads:on --mm:orc -r tests/test_http_integration.nim && nim c --threads:on --mm:orc -r tests/test_server_e2e.nim"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
