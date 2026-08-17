@@ -26,3 +26,5 @@ task test, "Run the test suite":
   exec "nim c -r tests/test_schema.nim"
   exec "nim c -r tests/test_query.nim"
   exec "nim c -r tests/test_migrations.nim"
+  exec "nim c --threads:on --mm:orc -r tests/test_router.nim"
+  exec "nim c --threads:on --mm:orc -r tests/test_http_integration.nim"
