@@ -2,7 +2,7 @@
   "id": "FEAT-004",
   "type": "fix",
   "description": "Address all 5 issues identified in semantic review: path traversal prevention, infinite recursion guards, interpolation escaping, HTMX injection for standalone templates, and partial recursion guard.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Fix issue 1: Add path traversal validation in renderPartial and style-embed to verify resolved paths stay within viewsDir/staticDir",
     "Fix issue 2: Add max depth guard (10) to resolveInheritance to prevent infinite recursion on cyclic extends",
@@ -23,5 +23,5 @@
     "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim && nim c -r tests/test_parser.nim && nim c -r tests/test_integration.nim && nim c -r tests/test_schema.nim && nim c -r tests/test_query.nim && nim c -r tests/test_migrations.nim && nim c --threads:on --mm:orc -r tests/test_router.nim && nim c --threads:on --mm:orc -r tests/test_http_integration.nim && nim c --threads:on --mm:orc -r tests/test_server_e2e.nim"
   ],
   "blocked_reason": null,
-  "findings": null
+  "findings": "All 5 issues fixed. Path validation uses normalizedPath + absolutePath + startsWith check. Inheritance depth guard at 10, partial depth guard at 20. Interpolated element text now auto-escaped (elemEscaped=true). HTMX injection triggers on any head element regardless of isLayout flag. All 96 template tests and all other tests still pass with no modifications needed."
 }
