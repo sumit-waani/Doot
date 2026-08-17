@@ -1,0 +1,35 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Implement the complete lexer/tokenizer with whitespace sensitivity, three parse modes (route/schema, template, native), string interpolation, position tracking, and all token types defined in the spec.",
+  "status": "completed",
+  "steps": [
+    "Create src/doot/tokens.nim defining all token types as an enum: keywords (route, schema, table, field, group, do, end, if, else, each, in, config, mount, native, render, redirect, job, schedule, auth, extends, block, partial), HTTP methods (GET, POST, PUT, DELETE, PATCH), types (TypeString, TypeText, TypeInteger, TypeBoolean, TypeFloat, TypeDatetime), literals (StringLit, IntLit, BoolTrue, BoolFalse, NilLit), operators (Assign, Eq, NotEq, Gt, Lt, GtEq, LtEq, And, Or, Not), delimiters (LParen, RParen, LBracket, RBracket, Comma, Colon, Pipe, InterpolStart, InterpolEnd), structural (Identifier, Indent, Dedent, Newline, EOF). Each Token should carry: kind, value (string), file (string), line (int), column (int).",
+    "Create src/doot/lexer.nim implementing a Lexer type with fields: source (string), filename (string), pos (int), line (int), col (int), mode (enum: RouteSchema, Template, Native), indentStack (seq[int]), tokens (seq[Token]), errors (seq[string]).",
+    "Implement the main tokenize proc that dispatches based on current mode. In RouteSchema mode: newlines are significant, track but don't structurally use indentation. In Template mode: indentation changes produce INDENT/DEDENT tokens. In Native mode: raw pass-through until 'end' at matching indentation.",
+    "Implement character-level scanning: skipWhitespace (but not newlines in RouteSchema mode), readIdentifierOrKeyword (distinguish keywords from identifiers), readString (handle #{} interpolation by emitting InterpolStart, then recursively tokenizing the expression, then InterpolEnd), readNumber, readOperator (handle multi-char ops like ==, !=, >=, <=, &&, ||), readType (colon followed by type name like :string).",
+    "Implement template mode indentation tracking: at the start of each line, count leading spaces, compare to top of indentStack, emit INDENT tokens for increases and DEDENT tokens for decreases. Reject tabs with a clear error message.",
+    "Implement native block mode: when entering native mode (after seeing 'native do'), capture all content as raw text until an 'end' keyword appears at the same or lesser indentation level as the 'native' keyword.",
+    "Implement string interpolation: when inside a string and encountering #{, emit the string-so-far as a StringLit, emit InterpolStart, switch to expression-scanning mode until matching }, emit InterpolEnd, continue the string.",
+    "Implement position tracking: every token must carry the filename, line number (1-based), and column number (1-based) where it starts.",
+    "Implement error collection: when an unexpected character is encountered, record an error with file/line/col and skip the character, continuing to tokenize.",
+    "Write comprehensive tests in tests/test_lexer.nim covering: basic keyword recognition, HTTP method tokens, type tokens (:string etc), string literals with and without interpolation, integer literals, boolean literals, nil, all operators, all delimiters, identifier recognition, newline handling in route/schema mode, INDENT/DEDENT generation in template mode, native block raw capture, position tracking accuracy, tab rejection error, multiple errors in one pass."
+  ],
+  "acceptance_criteria": [
+    "All Doot keywords tokenize to their specific token types",
+    "HTTP methods (GET, POST, PUT, DELETE, PATCH) tokenize correctly",
+    "Type annotations (:string, :text, :integer, :boolean, :float, :datetime) tokenize correctly",
+    "String interpolation '\"hello #{name}\"' produces StringLit + InterpolStart + Identifier + InterpolEnd + StringLit tokens",
+    "Template mode produces INDENT/DEDENT tokens based on 2-space indentation changes",
+    "Native block mode captures raw content until matching 'end'",
+    "Every token has correct file, line, and column",
+    "Tabs in template mode produce a clear error",
+    "All tests pass with nimble test"
+  ],
+  "verification": [
+    "Run 'nimble test' and confirm all lexer tests pass",
+    "Run 'nimble build' and confirm compilation succeeds"
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented full lexer with tokens.nim + lexer.nim. All 60 tests pass. Key decisions: (1) Separated tokens into src/doot/tokens.nim for clean imports by parser. (2) Used std/tables for keyword/method/type lookup maps. (3) Native mode tracks indent level for end detection. (4) String interpolation handled inline during string scanning with recursive expression tokenization. (5) Template mode emits remaining DEDENTs at EOF. (6) Fields atLineStart and nativeIndent are exported for test access. (7) lexer.nim exports tokens module so importers get both."
+}

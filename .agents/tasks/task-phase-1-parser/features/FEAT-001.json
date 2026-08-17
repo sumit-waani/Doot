@@ -1,0 +1,35 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Install Nim, create project structure, and verify the toolchain works. Create a new git branch feat/phase-1-parser from the current branch.",
+  "status": "completed",
+  "steps": [
+    "Create branch feat/phase-1-parser from docs/architecture-and-implementation-plan",
+    "Install Nim stable via choosenim: curl https://nim-lang.org/choosenim/init.sh -sSf | sh (non-interactive, add to PATH)",
+    "Verify nim --version and nimble --version work",
+    "Create doot.nimble file at /projects/sandbox/Doot/doot.nimble with: name='doot', version='0.1.0', author, description, license, srcDir='src', bin=@['doot'], backend='c', requires 'nim >= 2.0.0'",
+    "Create directory structure: src/, src/doot/, tests/, examples/blog/, examples/blog/views/layouts/, examples/blog/views/posts/",
+    "Create a minimal src/doot.nim entry point that imports the parser module (placeholder)",
+    "Create a minimal src/doot/lexer.nim with a placeholder proc",
+    "Create a minimal src/doot/parser.nim with a placeholder proc",
+    "Create a minimal src/doot/ast.nim with placeholder types",
+    "Run 'nimble build' to verify the project compiles",
+    "Create a minimal tests/test_lexer.nim using unittest that has one passing test",
+    "Add a 'task test' to doot.nimble that runs the test files, then run 'nimble test' to verify tests pass"
+  ],
+  "acceptance_criteria": [
+    "nim --version returns a stable version >= 2.0",
+    "nimble --version returns a version",
+    "nimble build compiles without errors",
+    "nimble test runs and passes",
+    "Git branch feat/phase-1-parser exists and is checked out",
+    "Directory structure exists: src/doot/, tests/, examples/blog/"
+  ],
+  "verification": [
+    "Run 'nim --version' and confirm output",
+    "Run 'nimble build' and confirm exit code 0",
+    "Run 'nimble test' and confirm exit code 0"
+  ],
+  "blocked_reason": null,
+  "findings": "Nim 2.2.10 installed via choosenim. Required 'xz' package (yum install -y xz) for extraction on Amazon Linux 2023. PATH must include /root/.nimble/bin for nim/nimble commands. nimble build and nimble test both pass cleanly."
+}
