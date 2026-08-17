@@ -1,0 +1,31 @@
+{
+  "project_type": "Nim DSL compiler - web framework that compiles to native binaries",
+  "language": "Nim",
+  "build_system": "nimble (package manager) with nim compiler v2.2.10 via choosenim at /root/.nimble/bin. db_connector package is bundled at /root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src and included via nim.cfg path directive. Mummy HTTP library needs to be installed via nimble install mummy.",
+  "test_framework": "Nim unittest module. Tests in tests/ directory, compiled and run individually with nim c -r.",
+  "build_command": "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --hints:off src/doot/router.nim",
+  "test_command": "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --hints:off -r tests/test_router.nim && nim c --threads:on --mm:orc --hints:off -r tests/test_http_integration.nim",
+  "verification_instructions": "1. export PATH=/root/.nimble/bin:$PATH. 2. Run all existing Phase 1+2 tests: nim c -r tests/test_lexer.nim && nim c -r tests/test_parser.nim && nim c -r tests/test_integration.nim && nim c -r tests/test_schema.nim && nim c -r tests/test_query.nim && nim c -r tests/test_migrations.nim. 3. Run new Phase 3 tests: nim c --threads:on --mm:orc -r tests/test_router.nim && nim c --threads:on --mm:orc -r tests/test_http_integration.nim. 4. All tests must pass.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "1. export PATH=/root/.nimble/bin:$PATH. 2. cd /projects/sandbox/Doot. 3. nimble install mummy (for HTTP server). 4. mummy requires --threads:on --mm:orc compiler flags. 5. nim.cfg already has db_connector path.",
+  "environment_constraints": "OPEN_INTERNET network mode - can install packages from nimble. Mummy is preferred HTTP library (requires --threads:on --mm:orc). If mummy install fails, fall back to std/asynchttpserver (part of stdlib, no install needed). Template rendering is a STUB in Phase 3 (returns template path as placeholder HTML).",
+  "contribution_requirements": "Work on feat/phase-3-http-routing branch. Keep existing Phase 1+2 tests passing (259 tests). Follow existing code conventions: Nim object variants, DootNode AST pattern, files in src/doot/, tests in tests/. auth: required is implicit default for all routes. CORS denied by default. Auto-404 on nil find. HTMX embedded in binary.",
+  "key_patterns": "AST uses object variants with NodeKind discriminator in src/doot/ast.nim. DootNode is a ref object. Routes are nkRoute with httpMethod, routePath, routeAuth, routeRole, routeParam, routeBody. Groups are nkGroup with groupAuth, groupRole, groupChildren. Render is nkRender with renderPath and renderLocals. Redirect is nkRedirect with redirectExpr. The parser already handles route/group/render/redirect parsing. Phase 3 adds the runtime: HTTP server, route matching, ctx object, handler execution, static files, HTMX embed, error pages, CORS.",
+  "relevant_files": [
+    "src/doot/ast.nim",
+    "src/doot/tokens.nim",
+    "src/doot/parser.nim",
+    "src/doot/db_types.nim",
+    "src/doot/query.nim",
+    "src/doot/ddl.nim",
+    "src/doot/schema_utils.nim",
+    "tests/test_query.nim",
+    "tests/test_schema.nim",
+    "doot.nimble",
+    "nim.cfg",
+    "docs/dsl-spec.md",
+    "docs/implementation-plan.md",
+    "docs/cli.md"
+  ],
+  "directory_structure": "src/doot/ - compiler source modules. tests/ - test files using unittest. examples/blog/ - sample project. docs/ - project documentation. New files for Phase 3: src/doot/router.nim (route matching), src/doot/ctx.nim (request context), src/doot/handler.nim (handler codegen), src/doot/static_files.nim (static serving), src/doot/server.nim (HTTP server entry point), src/doot/htmx.nim (embedded HTMX)."
+}

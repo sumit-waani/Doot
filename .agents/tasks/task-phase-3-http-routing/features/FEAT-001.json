@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Set up environment: install mummy HTTP library, configure nim.cfg for threading/ORC, verify existing 259 tests still pass with new compiler flags.",
+  "status": "completed",
+  "steps": [
+    "Run: export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nimble install mummy -y to install the HTTP library",
+    "If mummy install fails, note the error and plan to use std/asynchttpserver as fallback",
+    "Update nim.cfg to add --threads:on and --mm:orc flags needed by mummy. Current content is just --path:\"/root/.choosenim/toolchains/nim-2.2.10/pkgs/db_connector/src\"",
+    "Update doot.nimble to add 'requires \"mummy >= 0.4.0\"' dependency",
+    "Verify all existing tests still pass: nim c --hints:off -r tests/test_lexer.nim && nim c --hints:off -r tests/test_parser.nim && nim c --hints:off -r tests/test_integration.nim && nim c --hints:off -r tests/test_schema.nim && nim c --hints:off -r tests/test_query.nim && nim c --hints:off -r tests/test_migrations.nim",
+    "If tests fail with ORC/threads flags, adjust nim.cfg to only apply threading to specific compilation targets, or fix the issues"
+  ],
+  "acceptance_criteria": [
+    "mummy package is installed and importable (or fallback to std/asynchttpserver is documented)",
+    "nim.cfg has correct compiler flags for mummy compatibility",
+    "doot.nimble has mummy dependency listed",
+    "All 259 existing tests pass without regression"
+  ],
+  "verification": [
+    "Run: export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --hints:off -r tests/test_lexer.nim && nim c --hints:off -r tests/test_parser.nim && nim c --hints:off -r tests/test_integration.nim && nim c --hints:off -r tests/test_schema.nim && nim c --hints:off -r tests/test_query.nim && nim c --hints:off -r tests/test_migrations.nim",
+    "Run: export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --hints:off -r tests/test_lexer.nim (verify threading works with existing tests)"
+  ],
+  "blocked_reason": null,
+  "findings": "mummy HTTP library could not be installed - the GitHub gateway proxy does not have access to guzba/mummy repository. Falling back to std/asynchttpserver (stdlib). nim.cfg updated with --threads:on and --mm:orc globally. All 259 existing tests pass without regression with these new compiler flags. std/asynchttpserver imports and works correctly. doot.nimble documents the mummy dependency as commented-out with fallback note."
+}
