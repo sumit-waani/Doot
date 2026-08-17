@@ -148,7 +148,7 @@ proc enqueueJobWithDelay*(db: DbConn, jobType: string, payload: JsonNode = newJO
 proc claimNextJob*(db: DbConn): Option[JobRecord] =
   ## Atomically claim the next pending job that is ready to run.
   ## Sets status to 'running' and locked_at to current time.
-  ## Returns none if no jobs are available.
+  ## Returns none if no jobs are available or if the claim was lost to another worker.
   let nowStr = $now()
 
   # Find the next eligible job
@@ -166,12 +166,16 @@ proc claimNextJob*(db: DbConn): Option[JobRecord] =
 
   let jobId = parseBiggestInt(row[0])
 
-  # Lock the job
-  db.exec(
+  # Lock the job and verify we actually changed a row (prevents phantom claims)
+  let affected = db.execAffectedRows(
     sql"""UPDATE _doot_jobs SET status = 'running', locked_at = ?, updated_at = ?
           WHERE id = ? AND status = 'pending'""",
     nowStr, nowStr, $jobId
   )
+
+  # If another worker already claimed this job, the UPDATE is a no-op
+  if affected == 0:
+    return none(JobRecord)
 
   result = some(JobRecord(
     id: jobId,
@@ -196,8 +200,8 @@ proc completeJob*(db: DbConn, jobId: int64) =
     nowStr, $jobId
   )
 
-proc failJob*(db: DbConn, jobId: int64, error: string = "", maxAttempts: int = 3) =
-  ## Mark a job as failed. If attempts < maxAttempts, re-enqueue for retry.
+proc failJob*(db: DbConn, jobId: int64, error: string = "") =
+  ## Mark a job as failed. If attempts < maxAttempts (from DB), re-enqueue for retry.
   ## Otherwise, set status to 'failed' permanently.
   let nowStr = $now()
 
@@ -208,7 +212,7 @@ proc failJob*(db: DbConn, jobId: int64, error: string = "", maxAttempts: int = 3
     nowStr, $jobId
   )
 
-  # Check current attempts
+  # Check current attempts against max_attempts stored in the DB row
   let row = db.getRow(
     sql"SELECT attempts, max_attempts FROM _doot_jobs WHERE id = ?",
     $jobId
@@ -236,10 +240,10 @@ proc failJob*(db: DbConn, jobId: int64, error: string = "", maxAttempts: int = 3
     )
 
 proc retryJob*(db: DbConn, jobId: int64) =
-  ## Manually retry a failed job by resetting it to pending.
+  ## Manually retry a failed job by resetting it to pending with attempts reset to 0.
   let nowStr = $now()
   db.exec(
-    sql"""UPDATE _doot_jobs SET status = 'pending', locked_at = NULL, error = NULL, updated_at = ?
+    sql"""UPDATE _doot_jobs SET status = 'pending', attempts = 0, locked_at = NULL, error = NULL, updated_at = ?
           WHERE id = ? AND status = 'failed'""",
     nowStr, $jobId
   )
@@ -379,33 +383,49 @@ proc addSchedule*(pool: WorkerPool, name: string, interval: Duration, handler: J
 
 proc workerLoop(pool: WorkerPool, workerId: int) {.async.} =
   ## A single worker loop that polls for and executes jobs.
+  ## Verifies the claim was successful before executing.
   while pool.running:
     let jobOpt = claimNextJob(pool.db)
     if jobOpt.isSome:
       let job = jobOpt.get
+      # Verify the job status is actually 'running' (claim was successful)
+      let statusRow = pool.db.getRow(
+        sql"SELECT status FROM _doot_jobs WHERE id = ?",
+        $job.id
+      )
+      if statusRow[0] != "running":
+        # Claim was not successful (another worker got it), skip
+        continue
       if pool.handlers.hasKey(job.jobType):
         let handler = pool.handlers[job.jobType]
         let payload = parseJson(job.payload)
         let fut = handler(payload)
         yield fut
         if fut.failed:
-          failJob(pool.db, job.id, fut.error.msg, job.maxAttempts)
+          failJob(pool.db, job.id, fut.error.msg)
         else:
           completeJob(pool.db, job.id)
       else:
-        failJob(pool.db, job.id, "No handler registered for job type: " & job.jobType, job.maxAttempts)
+        failJob(pool.db, job.id, "No handler registered for job type: " & job.jobType)
     else:
       await sleepAsync(pool.pollInterval)
 
 proc schedulerLoop(pool: WorkerPool) {.async.} =
   ## The scheduler loop that enqueues scheduled jobs at their configured intervals.
+  ## Includes deduplication to prevent duplicate pending jobs for the same schedule.
   while pool.running:
     let currentTime = getTime()
     for i in 0 ..< pool.schedules.len:
       let elapsed = currentTime - pool.schedules[i].lastRun
       if elapsed >= pool.schedules[i].interval:
-        # Enqueue the scheduled job
-        discard enqueueJob(pool.db, pool.schedules[i].name, newJObject())
+        # Check if a pending job of this type already exists (dedup guard)
+        let existing = pool.db.getRow(
+          sql"""SELECT COUNT(*) FROM _doot_jobs
+                WHERE job_type = ? AND status = 'pending'""",
+          pool.schedules[i].name
+        )
+        if existing[0] == "" or parseInt(existing[0]) == 0:
+          discard enqueueJob(pool.db, pool.schedules[i].name, newJObject())
         pool.schedules[i].lastRun = currentTime
 
     await sleepAsync(pool.pollInterval)

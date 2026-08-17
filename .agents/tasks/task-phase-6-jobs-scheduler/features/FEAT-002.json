@@ -1,0 +1,42 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Comprehensive test suite for the jobs and scheduler system covering all exit criteria: queue table creation, enqueue, worker execution, status transitions, retry logic, stuck job detection, scheduler intervals, interval parsing, configurable pool size, and payload deserialization. Also update doot.nimble to include the new test.",
+  "status": "completed",
+  "steps": [
+    "1. Create tests/test_jobs.nim with comprehensive test suites using std/unittest. Import std/[unittest, asyncdispatch, json, times, os, tables] and db_connector/db_sqlite and ../src/doot/jobs and ../src/doot/ast and ../src/doot/parser and ../src/doot/lexer.",
+    "2. Suite 'Jobs - Table Creation': test initJobsTable creates _doot_jobs with correct columns (query sqlite_master), test indexes exist on status and run_at.",
+    "3. Suite 'Jobs - Enqueue': test enqueueJob inserts row with correct job_type, test payload is JSON-serialized correctly, test default status is 'pending', test run_at defaults to now, test delayed jobs set run_at in future.",
+    "4. Suite 'Jobs - Claim and Execute': test claimNextJob returns pending job, test claimed job has status='running' and locked_at set, test claimNextJob returns nil when no pending jobs, test claimNextJob skips jobs with future run_at.",
+    "5. Suite 'Jobs - Status Transitions': test completeJob sets status='completed', test failJob increments attempts and sets error message, test failJob with attempts < maxAttempts re-enqueues (status='pending'), test failJob with attempts >= maxAttempts sets status='failed'.",
+    "6. Suite 'Jobs - Stuck Job Detection': test unlockStuckJobs resets jobs stuck longer than timeout, test unlockStuckJobs leaves recently-locked jobs alone.",
+    "7. Suite 'Jobs - Worker Pool': test worker picks up and executes enqueued job (use waitFor with timeout), test multiple workers can process jobs concurrently, test configurable pool size, test pool stops cleanly.",
+    "8. Suite 'Jobs - Scheduler': test addSchedule and scheduler inserts job at interval, test multiple schedules.",
+    "9. Suite 'Jobs - Interval Parsing': test parseInterval for '30 seconds', '5 minutes', '1 hour', '1 day', '1 week', '10 minutes', invalid formats.",
+    "10. Suite 'Jobs - Payload': test payload round-trip (enqueue with JSON object, claim and verify deserialized payload matches).",
+    "11. Suite 'Jobs - Parser Integration': test lexer tokenizes job/schedule keywords, test parser produces nkJob node from 'job \"send_email\" do |payload| end', test parser produces nkSchedule node from 'schedule \"cleanup\", every: \"1 hour\" do end', test enqueue statement parsing.",
+    "12. Update doot.nimble task test to add: exec \"nim c --threads:on --mm:orc -r tests/test_jobs.nim\""
+  ],
+  "acceptance_criteria": [
+    "tests/test_jobs.nim compiles and all tests pass with nim c --threads:on --mm:orc -r tests/test_jobs.nim",
+    "Tests cover job queue table creation and schema verification",
+    "Tests cover enqueue with correct payload serialization",
+    "Tests cover worker picking up and executing jobs",
+    "Tests cover status transitions (pending -> running -> completed/failed)",
+    "Tests cover retry logic (failed jobs re-enqueued up to max attempts)",
+    "Tests cover stuck job detection (locked_at timeout -> unlock for retry)",
+    "Tests cover scheduler (jobs inserted at configured intervals)",
+    "Tests cover interval parsing for all specified formats",
+    "Tests cover configurable pool size",
+    "Tests cover payload deserialization",
+    "Existing tests still pass (no regressions)",
+    "doot.nimble includes the new test in the test task"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc -r tests/test_jobs.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_parser.nim"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

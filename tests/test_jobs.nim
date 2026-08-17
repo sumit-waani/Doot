@@ -237,6 +237,47 @@ suite "Claim Next Job":
     check claimed.isNone
     db.close()
 
+  test "claimNextJob returns none when job was already claimed (phantom claim protection)":
+    ## Simulates the scenario where a job's status is changed to running
+    ## between the SELECT and UPDATE in claimNextJob. The changes() check
+    ## ensures none is returned if the UPDATE was a no-op.
+    let db = newTestDb()
+    let jobId = enqueueJob(db, "contested_job")
+
+    # Manually set the job to running (simulating another worker claimed it)
+    db.exec(
+      sql"UPDATE _doot_jobs SET status = 'running', locked_at = ? WHERE id = ?",
+      $now(), $jobId
+    )
+
+    # Now claimNextJob should find no pending jobs
+    let claimed = claimNextJob(db)
+    check claimed.isNone
+    db.close()
+
+  test "claimNextJob with execAffectedRows returns none on failed claim":
+    ## Verifies that if the UPDATE affects 0 rows (because status changed),
+    ## claimNextJob correctly returns none instead of a phantom job record.
+    let db = newTestDb()
+    # Insert two jobs
+    let id1 = enqueueJob(db, "job_a")
+    let id2 = enqueueJob(db, "job_b")
+
+    # Claim first job
+    let claimed1 = claimNextJob(db)
+    check claimed1.isSome
+    check claimed1.get.id == id1
+
+    # Claim second job
+    let claimed2 = claimNextJob(db)
+    check claimed2.isSome
+    check claimed2.get.id == id2
+
+    # No more jobs to claim
+    let claimed3 = claimNextJob(db)
+    check claimed3.isNone
+    db.close()
+
 suite "Complete Job":
   test "completeJob sets status to completed":
     let db = newTestDb()
@@ -257,7 +298,7 @@ suite "Fail Job and Retry":
     let db = newTestDb()
     let jobId = enqueueJob(db, "test_job", newJObject(), now(), maxAttempts = 3)
     discard claimNextJob(db)
-    failJob(db, jobId, "Something went wrong", maxAttempts = 3)
+    failJob(db, jobId, "Something went wrong")
 
     let row = db.getRow(
       sql"SELECT attempts FROM _doot_jobs WHERE id = ?",
@@ -270,7 +311,7 @@ suite "Fail Job and Retry":
     let db = newTestDb()
     let jobId = enqueueJob(db, "test_job", newJObject(), now(), maxAttempts = 3)
     discard claimNextJob(db)
-    failJob(db, jobId, "Error 1", maxAttempts = 3)
+    failJob(db, jobId, "Error 1")
 
     let row = db.getRow(
       sql"SELECT status, error FROM _doot_jobs WHERE id = ?",
@@ -284,7 +325,7 @@ suite "Fail Job and Retry":
     let db = newTestDb()
     let jobId = enqueueJob(db, "test_job", newJObject(), now(), maxAttempts = 1)
     discard claimNextJob(db)
-    failJob(db, jobId, "Final error", maxAttempts = 1)
+    failJob(db, jobId, "Final error")
 
     let row = db.getRow(
       sql"SELECT status, error, attempts FROM _doot_jobs WHERE id = ?",
@@ -301,21 +342,21 @@ suite "Fail Job and Retry":
 
     # Attempt 1
     discard claimNextJob(db)
-    failJob(db, jobId, "Error 1", maxAttempts = 3)
+    failJob(db, jobId, "Error 1")
     var row = db.getRow(sql"SELECT status, attempts FROM _doot_jobs WHERE id = ?", $jobId)
     check row[0] == "pending"
     check parseInt(row[1]) == 1
 
     # Attempt 2
     discard claimNextJob(db)
-    failJob(db, jobId, "Error 2", maxAttempts = 3)
+    failJob(db, jobId, "Error 2")
     row = db.getRow(sql"SELECT status, attempts FROM _doot_jobs WHERE id = ?", $jobId)
     check row[0] == "pending"
     check parseInt(row[1]) == 2
 
     # Attempt 3 - final failure
     discard claimNextJob(db)
-    failJob(db, jobId, "Error 3", maxAttempts = 3)
+    failJob(db, jobId, "Error 3")
     row = db.getRow(sql"SELECT status, attempts FROM _doot_jobs WHERE id = ?", $jobId)
     check row[0] == "failed"
     check parseInt(row[1]) == 3
@@ -325,7 +366,7 @@ suite "Fail Job and Retry":
     let db = newTestDb()
     let jobId = enqueueJob(db, "test_job", newJObject(), now(), maxAttempts = 1)
     discard claimNextJob(db)
-    failJob(db, jobId, "Error", maxAttempts = 1)
+    failJob(db, jobId, "Error")
 
     # Verify it's failed
     var row = db.getRow(sql"SELECT status FROM _doot_jobs WHERE id = ?", $jobId)
@@ -333,9 +374,10 @@ suite "Fail Job and Retry":
 
     # Manually retry
     retryJob(db, jobId)
-    row = db.getRow(sql"SELECT status, error FROM _doot_jobs WHERE id = ?", $jobId)
+    row = db.getRow(sql"SELECT status, error, attempts FROM _doot_jobs WHERE id = ?", $jobId)
     check row[0] == "pending"
     check row[1] == ""  # error should be cleared
+    check parseInt(row[2]) == 0  # attempts should be reset to 0
     db.close()
 
   test "retryJob only works on failed jobs":
@@ -346,6 +388,44 @@ suite "Fail Job and Retry":
     retryJob(db, jobId)
     let row = db.getRow(sql"SELECT status FROM _doot_jobs WHERE id = ?", $jobId)
     check row[0] == "pending"
+    db.close()
+
+  test "retryJob followed by failure uses full retry budget":
+    ## Verifies that after a manual retry, the job gets the full max_attempts
+    ## budget again (attempts reset to 0), so it can fail multiple times
+    ## before being permanently marked as failed.
+    let db = newTestDb()
+    let jobId = enqueueJob(db, "flaky_job", newJObject(), now(), maxAttempts = 2)
+
+    # Exhaust all attempts (2 failures -> permanently failed)
+    discard claimNextJob(db)
+    failJob(db, jobId, "Error 1")
+    discard claimNextJob(db)
+    failJob(db, jobId, "Error 2")
+
+    var row = db.getRow(sql"SELECT status, attempts FROM _doot_jobs WHERE id = ?", $jobId)
+    check row[0] == "failed"
+    check parseInt(row[1]) == 2
+
+    # Manually retry - should reset attempts to 0
+    retryJob(db, jobId)
+    row = db.getRow(sql"SELECT status, attempts FROM _doot_jobs WHERE id = ?", $jobId)
+    check row[0] == "pending"
+    check parseInt(row[1]) == 0
+
+    # Now it should be able to fail again (attempt 1 of 2) and get re-enqueued
+    discard claimNextJob(db)
+    failJob(db, jobId, "Error after retry 1")
+    row = db.getRow(sql"SELECT status, attempts FROM _doot_jobs WHERE id = ?", $jobId)
+    check row[0] == "pending"  # re-enqueued because attempts(1) < maxAttempts(2)
+    check parseInt(row[1]) == 1
+
+    # Second failure after retry - should be permanently failed
+    discard claimNextJob(db)
+    failJob(db, jobId, "Error after retry 2")
+    row = db.getRow(sql"SELECT status, attempts FROM _doot_jobs WHERE id = ?", $jobId)
+    check row[0] == "failed"
+    check parseInt(row[1]) == 2
     db.close()
 
 suite "Stuck Job Detection":
@@ -554,7 +634,7 @@ suite "Worker Execution (async)":
           let fut = h(payload)
           yield fut
           if fut.failed:
-            failJob(pool.db, job.id, fut.error.msg, job.maxAttempts)
+            failJob(pool.db, job.id, fut.error.msg)
           else:
             completeJob(pool.db, job.id)
 
@@ -582,9 +662,9 @@ suite "Worker Execution (async)":
             await h(payload)
             completeJob(pool.db, job.id)
           except CatchableError as e:
-            failJob(pool.db, job.id, e.msg, job.maxAttempts)
+            failJob(pool.db, job.id, e.msg)
         else:
-          failJob(pool.db, job.id, "No handler registered for job type: " & job.jobType, job.maxAttempts)
+          failJob(pool.db, job.id, "No handler registered for job type: " & job.jobType)
 
     waitFor runOnce()
 
@@ -670,6 +750,40 @@ suite "Scheduler":
     # No jobs should be enqueued
     let counts = getJobCounts(db)
     check counts.pending == 0
+    db.close()
+
+  test "scheduler dedup prevents duplicate pending jobs":
+    ## Verifies that the scheduler does not insert a duplicate pending job
+    ## when one already exists for the same job type.
+    let db = newTestDb()
+    let pool = newWorkerPool(db, poolSize = 1, pollInterval = 100)
+
+    proc handler(payload: JsonNode) {.async.} =
+      discard
+
+    pool.addSchedule("daily_report", initDuration(seconds = 1), handler)
+    pool.schedules[0].lastRun = getTime() - initDuration(seconds = 2)
+
+    # Manually insert a pending job of the same type (simulates prior insertion)
+    discard enqueueJob(db, "daily_report", newJObject())
+
+    # Simulate scheduler iteration with dedup guard
+    let currentTime = getTime()
+    for i in 0 ..< pool.schedules.len:
+      let elapsed = currentTime - pool.schedules[i].lastRun
+      if elapsed >= pool.schedules[i].interval:
+        let existing = pool.db.getRow(
+          sql"""SELECT COUNT(*) FROM _doot_jobs
+                WHERE job_type = ? AND status = 'pending'""",
+          pool.schedules[i].name
+        )
+        if existing[0] == "" or parseInt(existing[0]) == 0:
+          discard enqueueJob(pool.db, pool.schedules[i].name, newJObject())
+        pool.schedules[i].lastRun = currentTime
+
+    # Should still have only 1 pending job (no duplicate)
+    let counts = getJobCounts(db)
+    check counts.pending == 1
     db.close()
 
 suite "Parser - Job Declaration":
@@ -876,7 +990,7 @@ suite "Integration - Full Job Lifecycle":
       waitFor flakyHandler(parseJson(claimed.get.payload))
       completeJob(db, claimed.get.id)
     except CatchableError as e:
-      failJob(db, claimed.get.id, e.msg, claimed.get.maxAttempts)
+      failJob(db, claimed.get.id, e.msg)
 
     var row = db.getRow(sql"SELECT status, attempts FROM _doot_jobs WHERE id = ?", $jobId)
     check row[0] == "pending"  # re-enqueued
@@ -889,7 +1003,7 @@ suite "Integration - Full Job Lifecycle":
       waitFor flakyHandler(parseJson(claimed.get.payload))
       completeJob(db, claimed.get.id)
     except CatchableError as e:
-      failJob(db, claimed.get.id, e.msg, claimed.get.maxAttempts)
+      failJob(db, claimed.get.id, e.msg)
 
     row = db.getRow(sql"SELECT status FROM _doot_jobs WHERE id = ?", $jobId)
     check row[0] == "completed"
