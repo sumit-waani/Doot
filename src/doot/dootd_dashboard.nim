@@ -13,6 +13,7 @@ import ./dootd_stats
 const
   SessionCookieName* = "dootd_session"
   SessionExpireHours* = 24
+  CsrfTokenLength* = 16
 
 # =============================================================================
 # Session Management (simplified, SQLite-backed)
@@ -52,6 +53,7 @@ proc createSession*(db: DbConn): string =
 
 proc validateSession*(db: DbConn, sessionId: string): bool =
   ## Check if a session exists and is not expired.
+  ## Compares the stored expires_at timestamp against the current time.
   if sessionId.len == 0:
     return false
   let row = db.getRow(
@@ -60,12 +62,61 @@ proc validateSession*(db: DbConn, sessionId: string): bool =
   )
   if row[0].len == 0:
     return false
-  # Session exists - consider it valid (simple expiry check)
+  # Enforce expiry: compare stored timestamp to current time
+  try:
+    let expiresAt = parse(row[0], "yyyy-MM-dd'T'HH:mm:sszzz")
+    if now() > expiresAt:
+      # Session has expired - delete it and reject
+      db.exec(sql"DELETE FROM dootd_sessions WHERE session_id = ?", sessionId)
+      return false
+  except TimeParseError:
+    # If the timestamp cannot be parsed, try alternative format
+    try:
+      let expiresAt = parse(row[0], "yyyy-MM-dd HH:mm:ss")
+      if now() > expiresAt:
+        db.exec(sql"DELETE FROM dootd_sessions WHERE session_id = ?", sessionId)
+        return false
+    except TimeParseError:
+      # If we still cannot parse, accept the session (backward compat)
+      discard
   result = true
 
 proc deleteSessionById*(db: DbConn, sessionId: string) =
   ## Delete a session from the database.
   db.exec(sql"DELETE FROM dootd_sessions WHERE session_id = ?", sessionId)
+
+# =============================================================================
+# CSRF Token Management
+# =============================================================================
+
+proc generateCsrfToken*(): string =
+  ## Generate a cryptographically secure random hex CSRF token.
+  var bytes: array[CsrfTokenLength, byte]
+  if not urandom(bytes):
+    raise newException(OSError, "Failed to read from system random source")
+  result = ""
+  for b in bytes:
+    result.add(toHex(b, 2).toLowerAscii())
+
+proc getCsrfToken*(db: DbConn, sessionId: string): string =
+  ## Get or create a CSRF token for the given session.
+  ## Stored as a config key: csrf_<sessionId>.
+  let key = "csrf_" & sessionId
+  result = getConfig(db, key)
+  if result.len == 0:
+    result = generateCsrfToken()
+    setConfig(db, key, result)
+
+proc validateCsrfToken*(db: DbConn, sessionId: string, token: string): bool =
+  ## Validate a CSRF token against the stored value for the session.
+  if sessionId.len == 0 or token.len == 0:
+    return false
+  let stored = getConfig(db, "csrf_" & sessionId)
+  result = stored.len > 0 and stored == token
+
+proc deleteCsrfToken*(db: DbConn, sessionId: string) =
+  ## Delete the CSRF token for a session (on logout).
+  deleteConfig(db, "csrf_" & sessionId)
 
 # =============================================================================
 # Request Parsing Helpers
@@ -190,17 +241,18 @@ proc handleLogout(dashboard: DootdDashboard, req: Request): DashboardResponse =
   ## Handle POST /logout - destroy session and redirect to login.
   let sessionId = getSessionFromRequest(dashboard, req)
   if sessionId.len > 0:
+    deleteCsrfToken(dashboard.db, sessionId)
     deleteSessionById(dashboard.db, sessionId)
   return redirectClearCookie("/login", SessionCookieName)
 
-proc handleAppList(dashboard: DootdDashboard): DashboardResponse =
+proc handleAppList(dashboard: DootdDashboard, csrfToken: string): DashboardResponse =
   ## Handle GET / - show app list.
   let apps = getApps(dashboard.db)
-  return htmlResponse(200, renderAppList(apps))
+  return htmlResponse(200, renderAppList(apps, csrfToken))
 
-proc handleAppNew(dashboard: DootdDashboard): DashboardResponse =
+proc handleAppNew(dashboard: DootdDashboard, csrfToken: string): DashboardResponse =
   ## Handle GET /apps/new - show create app form.
-  return htmlResponse(200, renderAppForm())
+  return htmlResponse(200, renderAppForm(csrfToken = csrfToken))
 
 proc handleAppCreate(dashboard: DootdDashboard, req: Request): DashboardResponse =
   ## Handle POST /apps - create a new app.
@@ -234,20 +286,20 @@ proc handleAppCreate(dashboard: DootdDashboard, req: Request): DashboardResponse
   discard saveAppConfig(dashboard.db, app)
   return redirectTo("/")
 
-proc handleAppDetail(dashboard: DootdDashboard, appId: int64): DashboardResponse =
+proc handleAppDetail(dashboard: DootdDashboard, appId: int64, csrfToken: string): DashboardResponse =
   ## Handle GET /apps/:id - show app detail.
   let app = getApp(dashboard.db, appId)
   if app.id == 0:
     return htmlResponse(404, renderLayout("Not Found", "<div class=\"container\"><div class=\"card\"><p>App not found.</p></div></div>"))
   let logs = getAppLogs(dashboard.db, appId, limit = 20)
-  return htmlResponse(200, renderAppDetail(app, logs))
+  return htmlResponse(200, renderAppDetail(app, logs, csrfToken))
 
-proc handleAppEdit(dashboard: DootdDashboard, appId: int64): DashboardResponse =
+proc handleAppEdit(dashboard: DootdDashboard, appId: int64, csrfToken: string): DashboardResponse =
   ## Handle GET /apps/:id/edit - show edit form.
   let app = getApp(dashboard.db, appId)
   if app.id == 0:
     return htmlResponse(404, renderLayout("Not Found", "<div class=\"container\"><div class=\"card\"><p>App not found.</p></div></div>"))
-  return htmlResponse(200, renderAppForm(app, isEdit = true))
+  return htmlResponse(200, renderAppForm(app, isEdit = true, csrfToken = csrfToken))
 
 proc handleAppUpdate(dashboard: DootdDashboard, appId: int64, req: Request): DashboardResponse =
   ## Handle POST /apps/:id/update - update app config.
@@ -308,9 +360,9 @@ proc handleStats(dashboard: DootdDashboard): DashboardResponse =
   let stats = collectSystemStats()
   return htmlResponse(200, renderStatsPage(stats))
 
-proc handleSettings(dashboard: DootdDashboard): DashboardResponse =
+proc handleSettings(dashboard: DootdDashboard, csrfToken: string): DashboardResponse =
   ## Handle GET /settings - show settings page.
-  return htmlResponse(200, renderSettingsPage())
+  return htmlResponse(200, renderSettingsPage(csrfToken = csrfToken))
 
 proc handlePasswordChange(dashboard: DootdDashboard, req: Request): DashboardResponse =
   ## Handle POST /settings/password - change admin password.
@@ -353,17 +405,29 @@ proc handleDashboardRequest*(dashboard: DootdDashboard, req: Request): Dashboard
   if not isAuthenticated(dashboard, req):
     return redirectTo("/login")
 
+  # Get session for CSRF token
+  let sessionId = getSessionFromRequest(dashboard, req)
+  let csrfToken = getCsrfToken(dashboard.db, sessionId)
+
+  # Validate CSRF token on all authenticated POST requests
+  if httpMethod == "POST":
+    let form = parseFormBody(req.body)
+    let submittedToken = form.getOrDefault("csrf_token")
+    if not validateCsrfToken(dashboard.db, sessionId, submittedToken):
+      return htmlResponse(403, renderLayout("Forbidden",
+        "<div class=\"container\"><div class=\"card\"><div class=\"alert alert-error\">Invalid or missing CSRF token. Please try again.</div></div></div>"))
+
   # POST /logout
   if path == "/logout" and httpMethod == "POST":
     return handleLogout(dashboard, req)
 
   # GET / - app list
   if path == "/" and httpMethod == "GET":
-    return handleAppList(dashboard)
+    return handleAppList(dashboard, csrfToken)
 
   # GET /apps/new - new app form
   if path == "/apps/new" and httpMethod == "GET":
-    return handleAppNew(dashboard)
+    return handleAppNew(dashboard, csrfToken)
 
   # POST /apps - create app
   if path == "/apps" and httpMethod == "POST":
@@ -375,7 +439,7 @@ proc handleDashboardRequest*(dashboard: DootdDashboard, req: Request): Dashboard
 
   # GET /settings
   if path == "/settings" and httpMethod == "GET":
-    return handleSettings(dashboard)
+    return handleSettings(dashboard, csrfToken)
 
   # POST /settings/password
   if path == "/settings/password" and httpMethod == "POST":
@@ -386,13 +450,13 @@ proc handleDashboardRequest*(dashboard: DootdDashboard, req: Request): Dashboard
     let appId = try: parseInt(segments[1]).int64 except ValueError: 0'i64
     if appId > 0:
       if segments.len == 2 and httpMethod == "GET":
-        return handleAppDetail(dashboard, appId)
+        return handleAppDetail(dashboard, appId, csrfToken)
 
       if segments.len == 3:
         case segments[2]
         of "edit":
           if httpMethod == "GET":
-            return handleAppEdit(dashboard, appId)
+            return handleAppEdit(dashboard, appId, csrfToken)
         of "update":
           if httpMethod == "POST":
             return handleAppUpdate(dashboard, appId, req)

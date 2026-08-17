@@ -1,7 +1,7 @@
 ## Host-header based reverse proxy router for the dootd production daemon.
 ## Routes incoming HTTP requests to the correct child app based on Host header.
 
-import std/[asynchttpserver, asyncdispatch, httpclient, strutils, tables]
+import std/[asynchttpserver, asyncdispatch, httpclient, strutils, options]
 
 type
   ProxyRoute* = object
@@ -46,15 +46,17 @@ proc removeRoute*(router: var HostRouter, appId: int64) =
     else:
       inc i
 
-proc findRoute*(router: HostRouter, hostname: string): ptr ProxyRoute =
+proc findRoute*(router: HostRouter, hostname: string): Option[ProxyRoute] =
   ## Find a route matching the given hostname.
-  ## Returns nil if no route matches.
+  ## Returns none(ProxyRoute) if no route matches.
   ## The hostname comparison is case-insensitive and strips port if present.
+  ## Returns a value copy to avoid dangling pointer issues if the routes seq
+  ## is reallocated by concurrent addRoute/removeRoute calls.
   let cleanHost = hostname.split(':')[0].toLowerAscii().strip()
   for i in 0..<router.routes.len:
     if router.routes[i].hostname.toLowerAscii() == cleanHost:
-      return unsafeAddr router.routes[i]
-  return nil
+      return some(router.routes[i])
+  return none(ProxyRoute)
 
 proc forwardRequest*(targetPort: int, req: Request): Future[tuple[status: int, body: string, contentType: string]] {.async.} =
   ## Forward an HTTP request to a target port on localhost.
@@ -81,13 +83,14 @@ proc startRouter*(router: HostRouter) {.async.} =
   proc cb(req: Request) {.async, gcsafe.} =
     {.cast(gcsafe).}:
       let hostHeader = req.headers.getOrDefault("host")
-      let route = findRoute(router, hostHeader)
+      let routeOpt = findRoute(router, hostHeader)
 
-      if route == nil:
+      if routeOpt.isNone:
         await req.respond(Http404, "Not Found: No application configured for this host",
                           newHttpHeaders([("Content-Type", "text/plain")]))
         return
 
+      let route = routeOpt.get()
       try:
         let (status, body, contentType) = await forwardRequest(route.internalPort, req)
         let headers = newHttpHeaders([("Content-Type", contentType)])

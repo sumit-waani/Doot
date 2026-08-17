@@ -31,31 +31,56 @@ type
     uptime*: string
 
 proc getCpuUsage*(): CpuStats =
-  ## Read CPU usage from /proc/stat.
+  ## Read CPU usage from /proc/stat using delta-based sampling.
+  ## Takes two samples 100ms apart to compute instantaneous usage.
   ## Returns a placeholder if /proc/stat is not available.
   result = CpuStats(usagePercent: 0.0, available: false)
   let procStat = "/proc/stat"
   if not fileExists(procStat):
     return
 
+  proc readCpuTotals(): tuple[total, idle: float] =
+    try:
+      let content = readFile(procStat)
+      let lines = content.splitLines()
+      for line in lines:
+        if line.startsWith("cpu "):
+          let parts = line.splitWhitespace()
+          if parts.len >= 5:
+            let user = parseFloat(parts[1])
+            let nice = parseFloat(parts[2])
+            let system = parseFloat(parts[3])
+            let idle = parseFloat(parts[4])
+            let iowait = if parts.len > 5: parseFloat(parts[5]) else: 0.0
+            let irq = if parts.len > 6: parseFloat(parts[6]) else: 0.0
+            let softirq = if parts.len > 7: parseFloat(parts[7]) else: 0.0
+            let total = user + nice + system + idle + iowait + irq + softirq
+            return (total: total, idle: idle)
+          break
+    except IOError, ValueError:
+      discard
+    return (total: 0.0, idle: 0.0)
+
   try:
-    let content = readFile(procStat)
-    let lines = content.splitLines()
-    for line in lines:
-      if line.startsWith("cpu "):
-        let parts = line.splitWhitespace()
-        if parts.len >= 5:
-          let user = parseFloat(parts[1])
-          let nice = parseFloat(parts[2])
-          let system = parseFloat(parts[3])
-          let idle = parseFloat(parts[4])
-          let iowait = if parts.len > 5: parseFloat(parts[5]) else: 0.0
-          let total = user + nice + system + idle + iowait
-          if total > 0:
-            result.usagePercent = ((total - idle) / total) * 100.0
-            result.available = true
-        break
-  except IOError, ValueError:
+    # First sample
+    let s1 = readCpuTotals()
+    if s1.total == 0.0:
+      return
+
+    # Wait briefly for delta measurement
+    sleep(100)
+
+    # Second sample
+    let s2 = readCpuTotals()
+    if s2.total == 0.0:
+      return
+
+    let totalDelta = s2.total - s1.total
+    let idleDelta = s2.idle - s1.idle
+    if totalDelta > 0:
+      result.usagePercent = ((totalDelta - idleDelta) / totalDelta) * 100.0
+      result.available = true
+  except:
     discard
 
 proc getMemoryInfo*(): MemStats =

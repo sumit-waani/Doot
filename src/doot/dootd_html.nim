@@ -103,7 +103,7 @@ const DashboardCSS* = """
   .actions { display: flex; gap: 0.5rem; align-items: center; }
 """
 
-proc renderLayout*(title: string, bodyContent: string, isLoggedIn: bool = true): string =
+proc renderLayout*(title: string, bodyContent: string, isLoggedIn: bool = true, csrfToken: string = ""): string =
   ## Wraps content in a full HTML page with nav bar and embedded CSS.
   result = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
   result.add("  <meta charset=\"UTF-8\">\n")
@@ -122,6 +122,7 @@ proc renderLayout*(title: string, bodyContent: string, isLoggedIn: bool = true):
     result.add("  </div>\n")
     result.add("  <div class=\"nav-right\">\n")
     result.add("    <form method=\"POST\" action=\"/logout\" style=\"display:inline\">\n")
+    result.add("      <input type=\"hidden\" name=\"csrf_token\" value=\"" & csrfToken & "\">\n")
     result.add("      <button type=\"submit\" class=\"btn btn-secondary\">Logout</button>\n")
     result.add("    </form>\n")
     result.add("  </div>\n")
@@ -155,7 +156,7 @@ proc statusClass(status: AppStatus): string =
   of asError: "status-error"
   of asDeploying: "status-deploying"
 
-proc renderAppList*(apps: seq[AppConfig]): string =
+proc renderAppList*(apps: seq[AppConfig], csrfToken: string = ""): string =
   ## Render the app list page showing all managed applications.
   var body = "<div class=\"container\">\n"
   body.add("  <div class=\"card\">\n")
@@ -178,6 +179,7 @@ proc renderAppList*(apps: seq[AppConfig]): string =
       body.add("          <td><span class=\"status-badge " & statusClass(app.status) & "\">" & $app.status & "</span></td>\n")
       body.add("          <td class=\"actions\">\n")
       body.add("            <form method=\"POST\" action=\"/apps/" & $app.id & "/deploy\" style=\"display:inline\">\n")
+      body.add("              <input type=\"hidden\" name=\"csrf_token\" value=\"" & csrfToken & "\">\n")
       body.add("              <button type=\"submit\" class=\"btn btn-success\">Deploy</button>\n")
       body.add("            </form>\n")
       body.add("            <a href=\"/apps/" & $app.id & "/logs\" class=\"btn btn-secondary\">Logs</a>\n")
@@ -190,7 +192,7 @@ proc renderAppList*(apps: seq[AppConfig]): string =
   body.add("</div>\n")
   result = renderLayout("Apps", body)
 
-proc renderAppForm*(app: AppConfig = AppConfig(), isEdit: bool = false): string =
+proc renderAppForm*(app: AppConfig = AppConfig(), isEdit: bool = false, csrfToken: string = ""): string =
   ## Render the form for creating or editing an app.
   let title = if isEdit: "Edit App" else: "New App"
   let action = if isEdit: "/apps/" & $app.id & "/update" else: "/apps"
@@ -200,6 +202,7 @@ proc renderAppForm*(app: AppConfig = AppConfig(), isEdit: bool = false): string 
   body.add("  <div class=\"card\">\n")
   body.add("    <h2>" & title & "</h2>\n")
   body.add("    <form method=\"POST\" action=\"" & action & "\">\n")
+  body.add("      <input type=\"hidden\" name=\"csrf_token\" value=\"" & csrfToken & "\">\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"name\">App Name</label>\n")
   body.add("        <input type=\"text\" id=\"name\" name=\"name\" value=\"" & app.name & "\" required>\n")
@@ -242,7 +245,7 @@ proc renderAppForm*(app: AppConfig = AppConfig(), isEdit: bool = false): string 
   body.add("</div>\n")
   result = renderLayout(title, body)
 
-proc renderAppDetail*(app: AppConfig, recentLogs: seq[tuple[timestamp, stream, message: string]] = @[]): string =
+proc renderAppDetail*(app: AppConfig, recentLogs: seq[tuple[timestamp, stream, message: string]] = @[], csrfToken: string = ""): string =
   ## Render the app detail page with status, info, and recent logs.
   var body = "<div class=\"container\">\n"
   body.add("  <div class=\"card\">\n")
@@ -260,11 +263,13 @@ proc renderAppDetail*(app: AppConfig, recentLogs: seq[tuple[timestamp, stream, m
   body.add("    </table>\n")
   body.add("    <div style=\"margin-top:1rem\" class=\"actions\">\n")
   body.add("      <form method=\"POST\" action=\"/apps/" & $app.id & "/deploy\" style=\"display:inline\">\n")
+  body.add("        <input type=\"hidden\" name=\"csrf_token\" value=\"" & csrfToken & "\">\n")
   body.add("        <button type=\"submit\" class=\"btn btn-success\">Deploy</button>\n")
   body.add("      </form>\n")
   body.add("      <a href=\"/apps/" & $app.id & "/edit\" class=\"btn btn-secondary\">Edit</a>\n")
   body.add("      <a href=\"/apps/" & $app.id & "/logs\" class=\"btn btn-secondary\">Logs</a>\n")
   body.add("      <form method=\"POST\" action=\"/apps/" & $app.id & "/delete\" style=\"display:inline\" onsubmit=\"return confirm('Delete this app?')\">\n")
+  body.add("        <input type=\"hidden\" name=\"csrf_token\" value=\"" & csrfToken & "\">\n")
   body.add("        <button type=\"submit\" class=\"btn btn-danger\">Delete</button>\n")
   body.add("      </form>\n")
   body.add("    </div>\n")
@@ -368,7 +373,7 @@ proc renderStatsPage*(stats: SystemStats): string =
   body.add("</div>\n")
   result = renderLayout("Stats", body)
 
-proc renderSettingsPage*(message: string = "", isError: bool = false): string =
+proc renderSettingsPage*(message: string = "", isError: bool = false, csrfToken: string = ""): string =
   ## Render the settings page with password change form.
   var body = "<div class=\"container\">\n"
   body.add("  <div class=\"card\">\n")
@@ -378,6 +383,7 @@ proc renderSettingsPage*(message: string = "", isError: bool = false): string =
     body.add("    <div class=\"alert " & alertClass & "\">" & message & "</div>\n")
   body.add("    <h3 style=\"margin-bottom:1rem;font-size:1rem\">Change Password</h3>\n")
   body.add("    <form method=\"POST\" action=\"/settings/password\">\n")
+  body.add("      <input type=\"hidden\" name=\"csrf_token\" value=\"" & csrfToken & "\">\n")
   body.add("      <div class=\"form-group\">\n")
   body.add("        <label for=\"current_password\">Current Password</label>\n")
   body.add("        <input type=\"password\" id=\"current_password\" name=\"current_password\" required>\n")

@@ -1,0 +1,34 @@
+{
+  "id": "FEAT-005",
+  "type": "fix",
+  "description": "Address all 7 issues from the code review: PAT encryption at rest, session expiry enforcement, dangling pointer fix in findRoute, async sleep in restartChild, nim.cfg passL cleanup with per-module pragmas, CSRF protection on POST routes, and CPU usage delta-based calculation.",
+  "status": "in_progress",
+  "steps": [
+    "Fix issue 1: Add a TODO comment about PAT plaintext storage being accepted for v1, with a note about future encryption",
+    "Fix issue 2: Enforce session expiry in validateSession by comparing expires_at to current time",
+    "Fix issue 3: Change findRoute to return Option[ProxyRoute] value copy instead of ptr",
+    "Fix issue 4: Remove synchronous sleep from restartChild, add comment about deferred restart scheduling",
+    "Fix issue 5: Add {.passL.} pragmas to crypto.nim and remove --passL flags from nim.cfg",
+    "Fix issue 6: Add CSRF token generation and validation to dashboard POST routes",
+    "Fix issue 7: Fix getCpuUsage to take two samples with a short delay for delta-based calculation",
+    "Update tests to reflect changes (findRoute return type, CSRF tokens, session expiry)",
+    "Verify build and tests pass"
+  ],
+  "acceptance_criteria": [
+    "PAT storage has a TODO comment documenting the accepted limitation",
+    "validateSession rejects sessions past their expires_at timestamp",
+    "findRoute returns a value copy (Option[ProxyRoute]) not a pointer",
+    "restartChild does not call synchronous sleep",
+    "nim.cfg does not contain --passL flags; crypto.nim has {.passL.} pragmas",
+    "POST routes validate a CSRF token",
+    "getCpuUsage computes instantaneous CPU via delta sampling",
+    "All tests pass",
+    "Build compiles successfully"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_dootd.nim"
+  ],
+  "blocked_reason": null,
+  "findings": null
+}

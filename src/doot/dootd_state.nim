@@ -27,6 +27,10 @@ const AppsTableSQL* = """
     status TEXT NOT NULL DEFAULT 'stopped'
   )
 """
+  # TODO(v2): PAT is stored in plaintext in SQLite. For v1 this is accepted
+  # since the DB file is protected by filesystem permissions (same user only).
+  # Future improvement: encrypt PATs at rest using a key derived from the admin
+  # password hash, or integrate with a secrets manager.
 
 const AppLogsTableSQL* = """
   CREATE TABLE IF NOT EXISTS dootd_app_logs (

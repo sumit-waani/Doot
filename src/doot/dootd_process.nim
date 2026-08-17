@@ -1,7 +1,7 @@
 ## Child process supervisor for the dootd production daemon.
 ## Manages child processes with crash detection and exponential backoff restart.
 
-import std/[tables, times, osproc, streams, strutils, os, strtabs]
+import std/[tables, times, osproc, streams, os, strtabs]
 import ./dootd_types
 
 type
@@ -151,9 +151,10 @@ proc restartChild*(supervisor: var ProcessSupervisor, appId: int64): bool =
   child.backoffMs = calculateBackoff(supervisor, child.restartCount)
   supervisor.children[appId] = child
 
-  # Sleep for backoff duration (in real use; for testing we skip this)
-  if child.backoffMs > 0:
-    sleep(min(child.backoffMs, 100))  # Cap actual sleep for responsiveness
+  # Backoff is tracked but not applied synchronously here.
+  # The caller (checkChildren loop) should schedule deferred restarts using
+  # sleepAsync or a timer callback to avoid blocking the event loop.
+  # The backoffMs field is available for the caller to implement this.
 
   # Start new process
   try:

@@ -3,7 +3,7 @@
 ## idempotent re-runs, dashboard auth, HTML rendering, stats, process management,
 ## GitHub integration, env var validation, deploy pipeline, host routing, and cgroups.
 
-import std/[unittest, os, strutils, times, random, tables, uri, sets, osproc]
+import std/[unittest, os, strutils, times, random, tables, uri, sets, osproc, options]
 import std/asynchttpserver
 import db_connector/db_sqlite
 import ../src/doot/dootd_types
@@ -900,6 +900,7 @@ suite "Dashboard - Request Routing":
 
   test "authenticated POST /apps creates app":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
     var headers = newHttpHeaders()
     headers["Cookie"] = SessionCookieName & "=" & sessionId
     headers["Content-Type"] = "application/x-www-form-urlencoded"
@@ -907,7 +908,7 @@ suite "Dashboard - Request Routing":
       reqMethod: HttpPost,
       url: parseUri("/apps"),
       headers: headers,
-      body: "name=testapp&hostname=test.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Frepo&pat=ghp_test&branch=main&env_vars=KEY%3Dvalue&memory_limit=256&cpu_shares=512"
+      body: "name=testapp&hostname=test.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Frepo&pat=ghp_test&branch=main&env_vars=KEY%3Dvalue&memory_limit=256&cpu_shares=512&csrf_token=" & csrfToken
     )
     let resp = handleDashboardRequest(dashboard, req)
     check resp.status == 302
@@ -949,6 +950,7 @@ suite "Dashboard - Request Routing":
 
   test "authenticated POST /apps/:id/delete removes app":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
     var app = AppConfig(
       name: "deleteapp",
       hostname: "delete.example.com",
@@ -965,7 +967,7 @@ suite "Dashboard - Request Routing":
       reqMethod: HttpPost,
       url: parseUri("/apps/" & $appId & "/delete"),
       headers: headers,
-      body: ""
+      body: "csrf_token=" & csrfToken
     )
     let resp = handleDashboardRequest(dashboard, req)
     check resp.status == 302
@@ -974,6 +976,7 @@ suite "Dashboard - Request Routing":
 
   test "authenticated POST /apps/:id/deploy sets deploying status":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
     var app = AppConfig(
       name: "deployapp",
       hostname: "deploy.example.com",
@@ -990,7 +993,7 @@ suite "Dashboard - Request Routing":
       reqMethod: HttpPost,
       url: parseUri("/apps/" & $appId & "/deploy"),
       headers: headers,
-      body: ""
+      body: "csrf_token=" & csrfToken
     )
     let resp = handleDashboardRequest(dashboard, req)
     check resp.status == 302
@@ -1083,6 +1086,7 @@ suite "Dashboard - Request Routing":
 
   test "settings password change with correct current password":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
     var headers = newHttpHeaders()
     headers["Cookie"] = SessionCookieName & "=" & sessionId
     headers["Content-Type"] = "application/x-www-form-urlencoded"
@@ -1090,7 +1094,7 @@ suite "Dashboard - Request Routing":
       reqMethod: HttpPost,
       url: parseUri("/settings/password"),
       headers: headers,
-      body: "current_password=testpass&new_password=newpass123&confirm_password=newpass123"
+      body: "current_password=testpass&new_password=newpass123&confirm_password=newpass123&csrf_token=" & csrfToken
     )
     let resp = handleDashboardRequest(dashboard, req)
     check resp.status == 200
@@ -1101,6 +1105,7 @@ suite "Dashboard - Request Routing":
 
   test "settings password change with wrong current password":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
     var headers = newHttpHeaders()
     headers["Cookie"] = SessionCookieName & "=" & sessionId
     headers["Content-Type"] = "application/x-www-form-urlencoded"
@@ -1108,7 +1113,7 @@ suite "Dashboard - Request Routing":
       reqMethod: HttpPost,
       url: parseUri("/settings/password"),
       headers: headers,
-      body: "current_password=wrongpass&new_password=newpass&confirm_password=newpass"
+      body: "current_password=wrongpass&new_password=newpass&confirm_password=newpass&csrf_token=" & csrfToken
     )
     let resp = handleDashboardRequest(dashboard, req)
     check resp.status == 200
@@ -1116,6 +1121,7 @@ suite "Dashboard - Request Routing":
 
   test "settings password change with mismatched confirmation":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
     var headers = newHttpHeaders()
     headers["Cookie"] = SessionCookieName & "=" & sessionId
     headers["Content-Type"] = "application/x-www-form-urlencoded"
@@ -1123,7 +1129,7 @@ suite "Dashboard - Request Routing":
       reqMethod: HttpPost,
       url: parseUri("/settings/password"),
       headers: headers,
-      body: "current_password=testpass&new_password=new1&confirm_password=new2"
+      body: "current_password=testpass&new_password=new1&confirm_password=new2&csrf_token=" & csrfToken
     )
     let resp = handleDashboardRequest(dashboard, req)
     check resp.status == 200
@@ -1131,13 +1137,14 @@ suite "Dashboard - Request Routing":
 
   test "POST /logout destroys session":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
     var headers = newHttpHeaders()
     headers["Cookie"] = SessionCookieName & "=" & sessionId
     let req = Request(
       reqMethod: HttpPost,
       url: parseUri("/logout"),
       headers: headers,
-      body: ""
+      body: "csrf_token=" & csrfToken
     )
     let resp = handleDashboardRequest(dashboard, req)
     check resp.status == 302
@@ -1175,6 +1182,7 @@ suite "Dashboard - App Update":
 
   test "POST /apps/:id/update modifies app config":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
     var app = AppConfig(
       name: "original",
       hostname: "original.example.com",
@@ -1194,7 +1202,7 @@ suite "Dashboard - App Update":
       reqMethod: HttpPost,
       url: parseUri("/apps/" & $appId & "/update"),
       headers: headers,
-      body: "name=updated&hostname=updated.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fupdated&pat=new_token&branch=develop&env_vars=KEY%3Dval&memory_limit=512&cpu_shares=1024"
+      body: "name=updated&hostname=updated.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fupdated&pat=new_token&branch=develop&env_vars=KEY%3Dval&memory_limit=512&cpu_shares=1024&csrf_token=" & csrfToken
     )
     let resp = handleDashboardRequest(dashboard, req)
     check resp.status == 302
@@ -1996,40 +2004,40 @@ suite "HostRouter - Route Finding":
 
   test "findRoute matches exact hostname":
     let route = findRoute(router, "app1.example.com")
-    check route != nil
-    check route.internalPort == 3001
-    check route.appId == 1
+    check route.isSome
+    check route.get().internalPort == 3001
+    check route.get().appId == 1
 
   test "findRoute is case-insensitive":
     let route = findRoute(router, "APP1.EXAMPLE.COM")
-    check route != nil
-    check route.internalPort == 3001
+    check route.isSome
+    check route.get().internalPort == 3001
 
   test "findRoute strips port from host header":
     let route = findRoute(router, "app2.example.com:8080")
-    check route != nil
-    check route.internalPort == 3002
+    check route.isSome
+    check route.get().internalPort == 3002
 
   test "findRoute returns nil for unknown host":
     let route = findRoute(router, "unknown.example.com")
-    check route == nil
+    check route.isNone
 
   test "findRoute returns nil for empty hostname":
     let route = findRoute(router, "")
-    check route == nil
+    check route.isNone
 
   test "findRoute matches with different routes":
     let r1 = findRoute(router, "blog.mysite.io")
-    check r1 != nil
-    check r1.appId == 3
+    check r1.isSome
+    check r1.get().appId == 3
     let r2 = findRoute(router, "app2.example.com")
-    check r2 != nil
-    check r2.appId == 2
+    check r2.isSome
+    check r2.get().appId == 2
 
   test "findRoute handles whitespace in hostname":
     let route = findRoute(router, "  app1.example.com  ")
-    check route != nil
-    check route.appId == 1
+    check route.isSome
+    check route.get().appId == 1
 
 # =============================================================================
 # cgroups Tests
@@ -2154,17 +2162,17 @@ suite "Integration - Deploy + Env Validation":
 
     # Verify routing
     let r1 = findRoute(router, "app1.test.com")
-    check r1 != nil
-    check r1.internalPort == 3001
+    check r1.isSome
+    check r1.get().internalPort == 3001
 
     let r2 = findRoute(router, "app2.test.com")
-    check r2 != nil
-    check r2.internalPort == 3002
+    check r2.isSome
+    check r2.get().internalPort == 3002
 
     # Remove an app
     router.removeRoute(1)
     let r3 = findRoute(router, "app1.test.com")
-    check r3 == nil
+    check r3.isNone
 
   test "systemd service file contains correct ExecStart for deploy":
     let content = generateServiceFile("/usr/local/bin/doot", "/var/lib/dootd")
@@ -2223,12 +2231,12 @@ suite "Integration - initDaemonState":
     let (dashboard, router, supervisor) = initDaemonState(db)
     # Routes should be registered
     let r1 = findRoute(router, "app1.example.com")
-    check r1 != nil
-    check r1.internalPort == 3001
+    check r1.isSome
+    check r1.get().internalPort == 3001
 
     let r2 = findRoute(router, "app2.example.com")
-    check r2 != nil
-    check r2.internalPort == 3002
+    check r2.isSome
+    check r2.get().internalPort == 3002
 
   test "initDaemonState does not register routes for apps without hostname":
     var app = AppConfig(
@@ -2297,9 +2305,9 @@ suite "Integration - Full First-Run Lifecycle":
 
     # Verify route was registered
     let route = findRoute(router, "webapp.example.com")
-    check route != nil
-    check route.internalPort == 3001
-    check route.appId == appId
+    check route.isSome
+    check route.get().internalPort == 3001
+    check route.get().appId == appId
 
     # Verify dashboard auth works
     check verifyAdminPassword(db, password) == true
@@ -2347,8 +2355,8 @@ suite "Integration - Full First-Run Lifecycle":
     # Step 4: Initialize daemon state and verify routing
     let (dashboard, router, supervisor) = initDaemonState(db)
     let route = findRoute(router, "myapp.example.com")
-    check route != nil
-    check route.internalPort == 3001
+    check route.isSome
+    check route.get().internalPort == 3001
 
     # Step 5: Verify state is loaded correctly
     let state = loadState(db)
@@ -2386,8 +2394,8 @@ suite "Integration - Full First-Run Lifecycle":
     # initDaemonState also works correctly
     let (dashboard, router, supervisor) = initDaemonState(db2)
     let route = findRoute(router, "persist.example.com")
-    check route != nil
-    check route.appId == apps[0].id
+    check route.isSome
+    check route.get().appId == apps[0].id
 
   test "reset-password flow works after init":
     let db = initDootdDb(testDir)
@@ -2471,6 +2479,7 @@ suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
 
     # Extract session ID from cookie
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
 
     # Step 2: Create an app
     var createHeaders = newHttpHeaders()
@@ -2480,7 +2489,7 @@ suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
       reqMethod: HttpPost,
       url: parseUri("/apps"),
       headers: createHeaders,
-      body: "name=blogapp&hostname=blog.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fblog&pat=ghp_test&branch=main&env_vars=PORT%3D3001&memory_limit=256&cpu_shares=512"
+      body: "name=blogapp&hostname=blog.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fblog&pat=ghp_test&branch=main&env_vars=PORT%3D3001&memory_limit=256&cpu_shares=512&csrf_token=" & csrfToken
     )
     let createResp = handleDashboardRequest(dashboard, createReq)
     check createResp.status == 302
@@ -2496,8 +2505,8 @@ suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
     # Step 4: Verify route would be set up in initDaemonState
     let (d, router, s) = initDaemonState(db)
     let route = findRoute(router, "blog.example.com")
-    check route != nil
-    check route.internalPort == InternalPortStart
+    check route.isSome
+    check route.get().internalPort == InternalPortStart
 
     # Step 5: Trigger deploy via dashboard
     var deployHeaders = newHttpHeaders()
@@ -2506,7 +2515,7 @@ suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
       reqMethod: HttpPost,
       url: parseUri("/apps/" & $apps[0].id & "/deploy"),
       headers: deployHeaders,
-      body: ""
+      body: "csrf_token=" & csrfToken
     )
     let deployResp = handleDashboardRequest(dashboard, deployReq)
     check deployResp.status == 302
@@ -2517,6 +2526,7 @@ suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
 
   test "dashboard CRUD: create -> view detail -> update -> delete":
     let sessionId = createSession(db)
+    let csrfToken = getCsrfToken(db, sessionId)
 
     # Create
     var headers = newHttpHeaders()
@@ -2526,7 +2536,7 @@ suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
       reqMethod: HttpPost,
       url: parseUri("/apps"),
       headers: headers,
-      body: "name=testcrud&hostname=crud.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fcrud&branch=main&env_vars=&memory_limit=128&cpu_shares=256"
+      body: "name=testcrud&hostname=crud.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fcrud&branch=main&env_vars=&memory_limit=128&cpu_shares=256&csrf_token=" & csrfToken
     )
     discard handleDashboardRequest(dashboard, createReq)
 
@@ -2556,7 +2566,7 @@ suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
       reqMethod: HttpPost,
       url: parseUri("/apps/" & $appId & "/update"),
       headers: updateHeaders,
-      body: "name=updated&hostname=updated.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fupdated&branch=develop&env_vars=KEY%3Dval&memory_limit=512&cpu_shares=1024"
+      body: "name=updated&hostname=updated.example.com&github_url=https%3A%2F%2Fgithub.com%2Fuser%2Fupdated&branch=develop&env_vars=KEY%3Dval&memory_limit=512&cpu_shares=1024&csrf_token=" & csrfToken
     )
     let updateResp = handleDashboardRequest(dashboard, updateReq)
     check updateResp.status == 302
@@ -2572,7 +2582,7 @@ suite "Integration - Dashboard + App CRUD + Deploy End-to-End":
       reqMethod: HttpPost,
       url: parseUri("/apps/" & $appId & "/delete"),
       headers: deleteHeaders,
-      body: ""
+      body: "csrf_token=" & csrfToken
     )
     let deleteResp = handleDashboardRequest(dashboard, deleteReq)
     check deleteResp.status == 302
