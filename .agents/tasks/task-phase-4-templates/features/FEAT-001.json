@@ -1,0 +1,21 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Create the feat/phase-4-templates branch from feat/phase-3-http-routing and verify all 373 existing tests pass as baseline.",
+  "status": "completed",
+  "steps": [
+    "Run `git checkout -b feat/phase-4-templates` from feat/phase-3-http-routing branch",
+    "Run all 9 existing test files to confirm 373 tests pass (use export PATH=/root/.nimble/bin:$PATH before commands)",
+    "Verify compilation of key modules: `nim c src/doot/response.nim`, `nim c src/doot/server.nim`"
+  ],
+  "acceptance_criteria": [
+    "Branch feat/phase-4-templates exists and is checked out",
+    "All 373 existing tests pass without modification"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && git branch --show-current",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim && nim c -r tests/test_parser.nim && nim c -r tests/test_integration.nim && nim c -r tests/test_schema.nim && nim c -r tests/test_query.nim && nim c -r tests/test_migrations.nim && nim c --threads:on --mm:orc -r tests/test_router.nim && nim c --threads:on --mm:orc -r tests/test_http_integration.nim && nim c --threads:on --mm:orc -r tests/test_server_e2e.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "All 373 tests pass across 9 files: test_lexer(70), test_parser(67), test_integration(28), test_schema(19), test_query(33), test_migrations(42), test_router(31), test_http_integration(61), test_server_e2e(22). Key modules response.nim and server.nim compile cleanly. Branch feat/phase-4-templates created from feat/phase-3-http-routing at commit 3840bdb."
+}
