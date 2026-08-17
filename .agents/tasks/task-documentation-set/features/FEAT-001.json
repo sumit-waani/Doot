@@ -1,0 +1,25 @@
+{
+  "id": "FEAT-001",
+  "type": "docs",
+  "description": "Create the foundational documentation files: philosophy.md, architecture.md, project-structure.md, and escape-hatch.md. These establish the core principles and high-level system understanding that other docs reference.",
+  "status": "in_progress",
+  "steps": [
+    "Create docs/philosophy.md covering: the 6 core non-negotiable rules, non-goals (Docker, K8s, Postgres, Redis, multi-runtime JS), graduation path (when to leave Doot), the 'remove decisions not add configuration' principle, and the core bet (99% of apps don't need distributed infra).",
+    "Create docs/architecture.md covering: system overview with component diagram (ASCII/mermaid), single binary architecture (CLI + dootd modes), data flow from .do files through compiler to native binary, runtime architecture (HTTP server, SQLite, job worker pool, session store), and how components interact.",
+    "Create docs/project-structure.md covering: canonical directory layout (app.do, feature files, views/, static/, uploads/, .env, migrations/), feature-fused vs MVC explanation, what each file/directory is for, conventions for naming, and examples.",
+    "Create docs/escape-hatch.md covering: the native block semantics, keyword choice (verbose by design), scoping rules (block-level only, never file-level), full Nim stdlib access, DSL primitives remain accessible inside native blocks, documentation placement philosophy, limitations, and when to use it vs when to just graduate from Doot."
+  ],
+  "acceptance_criteria": [
+    "docs/philosophy.md exists and covers all 6 core rules with explanation",
+    "docs/architecture.md exists with component diagram and data flow",
+    "docs/project-structure.md exists with full directory layout and conventions",
+    "docs/escape-hatch.md exists with native block syntax examples and scoping rules",
+    "All files are internally consistent with each other and reference the same terminology"
+  ],
+  "verification": [
+    "Verify all 4 files exist: ls docs/philosophy.md docs/architecture.md docs/project-structure.md docs/escape-hatch.md",
+    "Verify files are non-empty and contain proper markdown headings"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
