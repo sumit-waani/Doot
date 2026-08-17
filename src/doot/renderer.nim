@@ -41,6 +41,8 @@ type
     staticDir*: string
     blocks*: Table[string, seq[DootNode]]
     isLayout*: bool
+    partialDepth*: int          ## Current partial nesting depth (guard against recursion)
+    inheritanceDepth*: int      ## Current inheritance resolution depth (guard against cycles)
 
 const VoidElements* = [
   "area", "base", "br", "col", "embed", "hr", "img",
@@ -48,6 +50,9 @@ const VoidElements* = [
 ]
 
 const HtmxScriptTag* = """<script src="/__doot/htmx.min.js"></script>"""
+
+const MaxInheritanceDepth* = 10
+const MaxPartialDepth* = 20
 
 # --- DootValue constructors ---
 
@@ -129,6 +134,15 @@ proc escapeHtml*(s: string): string =
     of '"': result.add "&quot;"
     of '\'': result.add "&#x27;"
     else: result.add ch
+
+# --- Path validation ---
+
+proc isPathSafe*(resolvedPath: string, allowedDir: string): bool =
+  ## Validate that a resolved file path stays within the allowed directory.
+  ## Prevents path traversal attacks using ".." segments.
+  let normalResolved = normalizedPath(absolutePath(resolvedPath))
+  let normalAllowed = normalizedPath(absolutePath(allowedDir))
+  return normalResolved.startsWith(normalAllowed)
 
 # --- Expression evaluation ---
 
@@ -372,6 +386,8 @@ proc renderElement*(node: DootNode, ctx: TemplateContext): string =
   if tag == "style-embed":
     let cssFile = node.elemText.strip().strip(chars = {'"', '\''})
     let cssPath = ctx.staticDir / cssFile
+    if not isPathSafe(cssPath, ctx.staticDir):
+      return "<style>/* path traversal blocked: " & escapeHtml(cssFile) & " */</style>\n"
     if fileExists(cssPath):
       let cssContent = readFile(cssPath)
       return "<style>" & cssContent & "</style>\n"
@@ -430,8 +446,8 @@ proc renderElement*(node: DootNode, ctx: TemplateContext): string =
       html.add renderNode(child, ctx)
     hasContent = true
 
-  # Check for HTMX injection in head element of layouts
-  if tag == "head" and ctx.isLayout:
+  # Check for HTMX injection in head element (layouts and standalone templates)
+  if tag == "head":
     html.add HtmxScriptTag & "\n"
 
   html.add "</" & tag & ">"
@@ -475,6 +491,10 @@ proc renderTemplateEach*(node: DootNode, ctx: TemplateContext): string =
 
 proc renderPartial*(node: DootNode, ctx: TemplateContext): string =
   ## Render a partial template with its own locals.
+  ## Includes depth guard to prevent infinite recursion from self-referencing partials.
+  if ctx.partialDepth >= MaxPartialDepth:
+    return "<!-- partial recursion limit reached: " & node.partialPath & " -->"
+
   let partialPath = node.partialPath
 
   # Build locals for the partial
@@ -501,6 +521,10 @@ proc renderPartial*(node: DootNode, ctx: TemplateContext): string =
   if resolvedPath == "":
     return "<!-- partial not found: " & partialPath & " -->"
 
+  # Validate path stays within viewsDir (prevent path traversal)
+  if not isPathSafe(resolvedPath, ctx.viewsDir):
+    return "<!-- partial path traversal blocked: " & escapeHtml(partialPath) & " -->"
+
   # Parse and render the partial
   let source = readFile(resolvedPath)
   var tmplAst: DootNode
@@ -513,7 +537,9 @@ proc renderPartial*(node: DootNode, ctx: TemplateContext): string =
     viewsDir: ctx.viewsDir,
     staticDir: ctx.staticDir,
     blocks: initTable[string, seq[DootNode]](),
-    isLayout: false
+    isLayout: false,
+    partialDepth: ctx.partialDepth + 1,
+    inheritanceDepth: 0
   )
 
   return renderNodes(tmplAst.tmplBody, partialCtx)
@@ -567,6 +593,10 @@ proc resolveInheritance*(tmplAst: DootNode, ctx: TemplateContext): string =
   ## Resolve template inheritance and render the final output.
   ## If the template extends a layout, load the layout, pass blocks to it,
   ## and render the layout with the child's block overrides.
+  ## Includes depth guard to prevent infinite recursion on cyclic extends.
+  if ctx.inheritanceDepth >= MaxInheritanceDepth:
+    return "<!-- inheritance cycle detected (max depth " & $MaxInheritanceDepth & " exceeded) -->"
+
   if tmplAst.tmplExtends.len > 0:
     # Collect blocks from the child template
     var childBlocks = collectBlocks(tmplAst.tmplBlocks)
@@ -598,6 +628,7 @@ proc resolveInheritance*(tmplAst: DootNode, ctx: TemplateContext): string =
     var layoutCtx = ctx
     layoutCtx.blocks = mergedBlocks
     layoutCtx.isLayout = true
+    layoutCtx.inheritanceDepth = ctx.inheritanceDepth + 1
 
     # Check for deep inheritance (layout extends another layout)
     if layoutAst.tmplExtends.len > 0:

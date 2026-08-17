@@ -959,9 +959,9 @@ proc parseElementShorthand*(p: var Parser): DootNode =
     # Use parsePrimaryExpr to handle interpolation in strings
     let textExpr = p.parsePrimaryExpr()
     if textExpr.kind == nkStringLit and textExpr.strInterpolations.len > 0:
-      # String with interpolation - store as expression output (not escaped, it's template text)
+      # String with interpolation - store as expression output (escaped for security)
       result.elemExprOutput = textExpr
-      result.elemEscaped = false
+      result.elemEscaped = true
     else:
       # Plain string - store as text
       result.elemText = textExpr.strValue
