@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Implement crypto primitives: HMAC-SHA256 cookie signing (via OpenSSL C FFI) and argon2id password hashing (via libargon2 C FFI). These are the foundational building blocks for session security and password storage.",
+  "status": "completed",
+  "steps": [
+    "Create src/doot/crypto.nim with C FFI bindings to OpenSSL's HMAC functions (HMAC, EVP_sha256) and libargon2 (argon2id_hash_encoded, argon2id_verify). Use {.header: \"openssl/hmac.h\".} and {.header: \"argon2.h\".} with passL for linking.",
+    "Implement proc hmacSign*(key: string, data: string): string that produces a hex-encoded HMAC-SHA256 signature.",
+    "Implement proc hmacVerify*(key: string, data: string, signature: string): bool that does timing-safe comparison of computed vs provided HMAC.",
+    "Implement proc hashPassword*(password: string): string that uses argon2id with secure defaults (t_cost=3, m_cost=65536 i.e. 64MB, parallelism=4, hash_len=32) and returns the encoded hash string.",
+    "Implement proc verifyPassword*(password: string, encodedHash: string): bool that uses argon2id_verify with timing-safe comparison (argon2_verify already is timing-safe internally).",
+    "Implement proc signSessionCookie*(sessionId: string, secret: string): string that produces 'sessionId.signature' format.",
+    "Implement proc verifySessionCookie*(cookie: string, secret: string): string that splits the cookie, verifies the HMAC, and returns the sessionId (or empty string if tampered).",
+    "Create tests/test_auth.nim with the crypto test suite: test HMAC signing produces consistent results, test HMAC verification rejects tampered data, test password hashing produces non-plaintext output, test password verification succeeds with correct password and fails with wrong password, test cookie signing/verification round-trips correctly, test tampered cookies are rejected."
+  ],
+  "acceptance_criteria": [
+    "hmacSign produces a consistent hex output for the same key+data",
+    "hmacVerify returns false for tampered signatures",
+    "hashPassword produces a string starting with '$argon2id$' (encoded format)",
+    "verifyPassword returns true for correct password and false for wrong password",
+    "signSessionCookie and verifySessionCookie round-trip correctly",
+    "verifySessionCookie returns empty string for tampered cookies",
+    "All tests compile and pass with: nim c --threads:on --mm:orc -r tests/test_auth.nim"
+  ],
+  "verification": [
+    "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_auth.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "All 36 crypto tests pass. OpenSSL HMAC uses EVP_sha256 via C FFI. Argon2id uses libargon2 directly. Linking requires --passL:-largon2 --passL:-lssl --passL:-lcrypto. The argon2_encodedlen function is used to dynamically determine buffer size. Cookie format is 'sessionId.hexSignature' using rfind('.') for parsing to handle session IDs that might contain dots. Existing test suites (router, parser) continue to pass without regressions."
+}

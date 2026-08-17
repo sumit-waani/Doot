@@ -73,9 +73,45 @@ proc generateDDL*(table: DootNode): string =
     result &= "\n"
   result &= ");"
 
+proc generateAuthDDL*(auth: DootNode): string =
+  ## Generates the CREATE TABLE users statement from an nkAuth AST node.
+  ## Always includes: id, email, password_hash, created_at, updated_at.
+  ## Conditionally includes: role (if authRoles.len > 0), email_verified (if emailVerification).
+  assert auth.kind == nkAuth
+  var columns: seq[string] = @[]
+
+  # Always-present columns
+  columns.add("id INTEGER PRIMARY KEY AUTOINCREMENT")
+  columns.add("email TEXT NOT NULL UNIQUE")
+  columns.add("password_hash TEXT NOT NULL")
+
+  # Conditional role column
+  if auth.authRoles.len > 0:
+    columns.add("role TEXT DEFAULT ''")
+
+  # Conditional email_verified column
+  if auth.emailVerification:
+    columns.add("email_verified INTEGER DEFAULT 0")
+
+  # Timestamp columns
+  columns.add("created_at TEXT NOT NULL DEFAULT (datetime('now'))")
+  columns.add("updated_at TEXT NOT NULL DEFAULT (datetime('now'))")
+
+  let tableName = if auth.authModel.len > 0: auth.authModel else: "users"
+  result = "CREATE TABLE " & tableName & " (\n"
+  for i, col in columns:
+    result &= "  " & col
+    if i < columns.len - 1:
+      result &= ","
+    result &= "\n"
+  result &= ");"
+
 proc generateAllDDL*(schema: DootNode): seq[string] =
   ## Generates CREATE TABLE statements for all tables in a schema node.
+  ## Also includes auth DDL if schemaAuth is present.
   assert schema.kind == nkSchema
   result = @[]
   for table in schema.schemaTables:
     result.add(generateDDL(table))
+  if schema.schemaAuth != nil:
+    result.add(generateAuthDDL(schema.schemaAuth))

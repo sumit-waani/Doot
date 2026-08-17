@@ -1,16 +1,10 @@
 ## Main HTTP server module for the Doot runtime.
 ## Ties together routing, context, static files, HTMX, CORS, sessions,
-## and error handling using std/asynchttpserver + std/asyncdispatch.
-##
-## NOTE: SESSION COOKIE INTEGRATION IS NOT WIRED IN PHASE 3.
-## The session store (session.nim) provides full CRUD for SQLite-backed
-## sessions, but this server module does not read session IDs from incoming
-## request cookies (Cookie header) or write Set-Cookie headers on outgoing
-## responses. Session integration wiring (cookie read/write, session
-## hydration into DootCtx, Set-Cookie on new sessions) is implemented in
-## Phase 5 alongside authentication enforcement.
+## authentication enforcement, and error handling using std/asynchttpserver
+## + std/asyncdispatch.
 
 import std/[asynchttpserver, asyncdispatch, tables, strutils, uri]
+import db_connector/db_sqlite except Row
 import ./router
 import ./ctx
 import ./response
@@ -19,6 +13,8 @@ import ./htmx
 import ./error_pages
 import ./cors
 import ./session
+import ./auth
+import ./db_types
 
 type
   HandlerProc* = proc(ctx: DootCtx): DootResponse {.gcsafe.}
@@ -35,6 +31,9 @@ type
     port*: int
     corsConfig*: CorsConfig
     sessionStore*: SessionStore
+    db*: DbConn
+    authConfig*: AuthConfig
+    authEnabled*: bool
 
 proc newDootServer*(port: int = 3000, staticDir: string = "static",
                     viewsDir: string = "views"): DootServer =
@@ -45,7 +44,10 @@ proc newDootServer*(port: int = 3000, staticDir: string = "static",
     viewsDir: viewsDir,
     port: port,
     corsConfig: defaultCorsConfig(),
-    sessionStore: nil
+    sessionStore: nil,
+    db: nil,
+    authConfig: newAuthConfig(),
+    authEnabled: false
   )
 
 proc registerRoute*(server: DootServer, httpMethod: DootHttpMethod, pattern: string,
@@ -55,6 +57,29 @@ proc registerRoute*(server: DootServer, httpMethod: DootHttpMethod, pattern: str
   let handlerName = $httpMethod & ":" & pattern
   server.routeTable.addRoute(httpMethod, pattern, handlerName, authRequired, roleName)
   server.handlers[handlerName] = handler
+
+proc registerAuthRoutes*(server: DootServer, db: DbConn, config: AuthConfig) =
+  ## Register built-in auth routes (signup, login, logout) on the server.
+  ## These routes are public (no auth required).
+  ## Automatically enables auth enforcement on the server.
+  server.authEnabled = true
+  let store = server.sessionStore
+  let authCtx = AuthHandlerContext(db: db, store: store, config: config)
+
+  server.registerRoute(hmPost, "/signup", proc(ctx: DootCtx): DootResponse {.gcsafe.} =
+    {.cast(gcsafe).}:
+      handleSignup(authCtx, ctx)
+  , authRequired = false)
+
+  server.registerRoute(hmPost, "/login", proc(ctx: DootCtx): DootResponse {.gcsafe.} =
+    {.cast(gcsafe).}:
+      handleLogin(authCtx, ctx)
+  , authRequired = false)
+
+  server.registerRoute(hmPost, "/logout", proc(ctx: DootCtx): DootResponse {.gcsafe.} =
+    {.cast(gcsafe).}:
+      handleLogout(authCtx, ctx)
+  , authRequired = false)
 
 proc buildCtx(server: DootServer, req: Request,
               params: Table[string, string]): DootCtx =
@@ -123,19 +148,30 @@ proc handleRequest*(server: DootServer, req: Request) {.async.} =
     await sendResponse(req, resp)
     return
 
-  # Check authentication (stub: check if route requires auth)
-  if routeMatch.route.authRequired:
-    # NOTE: AUTH ENFORCEMENT IS INTENTIONALLY A NO-OP IN PHASE 3.
-    # Routes marked `auth: required` (the default) are accessible without
-    # any session or credential check. Real authentication enforcement is
-    # implemented in Phase 5, which adds session cookie validation, login
-    # flow, and 401 responses for unauthenticated requests.
-    # Until then, all routes are effectively public regardless of their
-    # auth annotation.
-    discard
+  # Auth enforcement: populate ctx.currentUser and enforce auth/role requirements
+  var currentUser: Row = nil
+  if server.authEnabled and server.sessionStore != nil and server.db != nil:
+    let cookieHeader = req.headers.getOrDefault("cookie")
+    let cookieValue = parseCookieHeader(cookieHeader, "doot_session")
+    if cookieValue.len > 0:
+      currentUser = loadUserFromCookie(server.db, server.sessionStore,
+                                       cookieValue, server.authConfig.sessionSecret)
+
+  if server.authEnabled and routeMatch.route.authRequired:
+    if currentUser == nil:
+      let resp = errorResponse(401, "Authentication required")
+      await sendResponse(req, resp)
+      return
+    if routeMatch.route.roleName.len > 0:
+      let userRole = if currentUser != nil: currentUser.getString("role") else: ""
+      if userRole != routeMatch.route.roleName:
+        let resp = errorResponse(403, "Insufficient permissions")
+        await sendResponse(req, resp)
+        return
 
   # Build context and execute handler
   let ctx = buildCtx(server, req, routeMatch.params)
+  ctx.currentUser = currentUser
   let handlerName = routeMatch.route.handlerName
 
   if not server.handlers.hasKey(handlerName):

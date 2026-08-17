@@ -1,0 +1,30 @@
+{
+  "project_type": "Nim DSL compiler and web framework (Doot) - compiles .do files to native binaries",
+  "language": "Nim 2.2.10",
+  "build_system": "nimble (Nim package manager). Compiler flags in nim.cfg: --threads:on --mm:orc. db_connector path configured in nim.cfg.",
+  "test_framework": "Nim stdlib unittest module. Each test file is compiled and run independently with 'nim c -r tests/test_*.nim'. Some tests need --threads:on --mm:orc.",
+  "build_command": "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c tests/test_router.nim",
+  "test_command": "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc -r tests/test_auth.nim",
+  "verification_instructions": "1. Compile the new test file: nim c --threads:on --mm:orc -r tests/test_auth.nim. 2. Run the full existing test suite to verify no regressions: nimble test. 3. Ensure all 469+ existing tests still pass.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "export PATH=\"/root/.nimble/bin:$PATH\" (Nim 2.2.10 via choosenim). libargon2-devel and openssl-devel are installed at the system level. No nimble packages needed beyond stdlib and db_connector (which is bundled).",
+  "environment_constraints": "OPEN_INTERNET network mode. nimble packages from GitHub cannot be installed (the proxy doesn't forward arbitrary GitHub repos). Must use C FFI directly for OpenSSL HMAC and argon2. libargon2 is at /usr/include/argon2.h and /usr/lib64/libargon2.so. OpenSSL is at /usr/include/openssl/ with libssl and libcrypto.",
+  "contribution_requirements": "Follow existing code patterns: ## doc comments at top, typed objects, procs with * for exports. Tests use stdlib unittest with suite/test blocks.",
+  "key_patterns": "1. Each module is a single .nim file in src/doot/. 2. Tests are in tests/test_*.nim. 3. AST nodes are object variants with NodeKind enum. 4. Server uses std/asynchttpserver. 5. DB uses db_connector/db_sqlite. 6. Session store already has SQLite CRUD (session.nim). 7. ctx.nim has DootCtx with currentUser: Row field. 8. router.nim has authRequired and roleName on Route objects. 9. server.nim has placeholder comments for Phase 5 auth wiring. 10. response.nim already has errorResponse(401/403) capability.",
+  "relevant_files": [
+    "src/doot/session.nim - existing session store (CRUD, needs HMAC cookie signing added)",
+    "src/doot/server.nim - HTTP server (needs auth middleware wiring)",
+    "src/doot/ctx.nim - request context (has currentUser: Row, needs population)",
+    "src/doot/router.nim - route matching (already has authRequired, roleName fields)",
+    "src/doot/ast.nim - AST types (already has nkAuth with authRoles, emailVerification)",
+    "src/doot/parser.nim - parser (already has parseAuth function)",
+    "src/doot/db_types.nim - Row, DbValue types used for currentUser",
+    "src/doot/response.nim - response helpers (has errorResponse)",
+    "src/doot/ddl.nim - DDL generation (needs user table DDL generation)",
+    "src/doot/query.nim - CRUD query interface (needed for user lookup)",
+    "src/doot/tokens.nim - token types (already has tkAuth)",
+    "tests/test_server_e2e.nim - pattern for E2E server tests with threads",
+    "tests/test_router.nim - pattern for unit tests"
+  ],
+  "directory_structure": "src/doot/ - all source modules. tests/ - all test files (test_*.nim). docs/ - design docs including auth.md. examples/blog/ - sample app. nim.cfg - compiler config."
+}
