@@ -174,10 +174,12 @@ proc parsePrimaryExpr*(p: var Parser): DootNode =
       discard p.advance()  # consume #{
       let expr = p.parseExpression()
       parts.add(expr)
+      baseStr.add("#{}")  # placeholder for interpolation
       if p.current.kind == tkInterpolEnd:
         discard p.advance()  # consume }
-      # After interpolation there may be another StringLit
+      # After interpolation there may be another StringLit (suffix/middle text)
       if p.current.kind == tkStringLit:
+        baseStr.add(p.current.value)
         discard p.advance()
     result = newStringLitNode(baseStr, tok.file, tok.line, tok.col)
     result.strInterpolations = parts
@@ -952,10 +954,17 @@ proc parseElementShorthand*(p: var Parser): DootNode =
     result.elemExprOutput = expr
     result.elemEscaped = false
 
-  # Check for inline text content (string literal)
+  # Check for inline text content (string literal, possibly with interpolation)
   if p.current.kind == tkStringLit and result.elemExprOutput == nil:
-    result.elemText = p.current.value
-    discard p.advance()
+    # Use parsePrimaryExpr to handle interpolation in strings
+    let textExpr = p.parsePrimaryExpr()
+    if textExpr.kind == nkStringLit and textExpr.strInterpolations.len > 0:
+      # String with interpolation - store as expression output (escaped for security)
+      result.elemExprOutput = textExpr
+      result.elemEscaped = true
+    else:
+      # Plain string - store as text
+      result.elemText = textExpr.strValue
 
   # Parse children (indented)
   if p.current.kind == tkNewline:

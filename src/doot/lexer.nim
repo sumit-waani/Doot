@@ -294,6 +294,12 @@ proc readIdentifierOrKeyword(lex: var Lexer) =
   var ident = ""
   while not lex.isAtEnd and lex.peek.isIdentChar:
     ident.add(lex.advance())
+  # In template mode, allow hyphens in identifiers (CSS classes, HTML attrs like hx-post, data-id)
+  if lex.mode == Template:
+    while not lex.isAtEnd and lex.peek == '-' and lex.pos + 1 < lex.source.len and lex.source[lex.pos + 1].isAlphaAscii:
+      ident.add(lex.advance())  # consume -
+      while not lex.isAtEnd and lex.peek.isIdentChar:
+        ident.add(lex.advance())
 
   # Check for HTTP methods
   if ident in HttpMethods:

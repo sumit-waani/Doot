@@ -1,0 +1,21 @@
+{
+  "id": "FEAT-005",
+  "type": "fix",
+  "description": "Address 2 issues from v2 semantic review: path traversal gap in resolveInheritance and internal path disclosure in error HTML comments.",
+  "status": "completed",
+  "steps": [
+    "Add isPathSafe check before readFile in resolveInheritance proc, matching the pattern used in renderPartial",
+    "Apply escapeHtml to all path values in error HTML comments (layout-not-found, partial-not-found, partial-recursion-limit, style-embed file-not-found)"
+  ],
+  "acceptance_criteria": [
+    "resolveInheritance rejects layout paths that escape viewsDir via path traversal",
+    "All error HTML comments use escapeHtml on path values for consistency",
+    "All existing tests still pass"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_templates.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim && nim c -r tests/test_parser.nim && nim c -r tests/test_integration.nim && nim c -r tests/test_schema.nim && nim c -r tests/test_query.nim && nim c -r tests/test_migrations.nim && nim c --threads:on --mm:orc -r tests/test_router.nim && nim c --threads:on --mm:orc -r tests/test_http_integration.nim && nim c --threads:on --mm:orc -r tests/test_server_e2e.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "Both v2 review issues fixed. isPathSafe check added to resolveInheritance before readFile, with a dedicated 'layout path traversal blocked' error message. All error HTML comments now consistently use escapeHtml on path values. All 469 tests pass."
+}

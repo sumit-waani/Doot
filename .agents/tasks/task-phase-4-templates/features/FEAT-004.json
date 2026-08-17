@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-004",
+  "type": "fix",
+  "description": "Address all 5 issues identified in semantic review: path traversal prevention, infinite recursion guards, interpolation escaping, HTMX injection for standalone templates, and partial recursion guard.",
+  "status": "completed",
+  "steps": [
+    "Fix issue 1: Add path traversal validation in renderPartial and style-embed to verify resolved paths stay within viewsDir/staticDir",
+    "Fix issue 2: Add max depth guard (10) to resolveInheritance to prevent infinite recursion on cyclic extends",
+    "Fix issue 3: Set elemEscaped = true for interpolated element text in parser.nim so user-controlled data is escaped",
+    "Fix issue 4: Inject HTMX script in head element for standalone templates that have a head element (not just layouts)",
+    "Fix issue 5: Add depth limit (20) to renderPartial to prevent stack overflow from self-referencing partials"
+  ],
+  "acceptance_criteria": [
+    "Path traversal attempts (e.g., ../../etc/passwd) are rejected in partials and style-embed",
+    "Cyclic template extends does not cause stack overflow, instead returns an error comment",
+    "Interpolated text in elements is HTML-escaped by default",
+    "HTMX script is injected in standalone templates that have a head element",
+    "Recursive partials exceeding depth 20 return an error comment instead of stack overflow",
+    "All existing tests still pass"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_templates.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim && nim c -r tests/test_parser.nim && nim c -r tests/test_integration.nim && nim c -r tests/test_schema.nim && nim c -r tests/test_query.nim && nim c -r tests/test_migrations.nim && nim c --threads:on --mm:orc -r tests/test_router.nim && nim c --threads:on --mm:orc -r tests/test_http_integration.nim && nim c --threads:on --mm:orc -r tests/test_server_e2e.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "All 5 issues fixed. Path validation uses normalizedPath + absolutePath + startsWith check. Inheritance depth guard at 10, partial depth guard at 20. Interpolated element text now auto-escaped (elemEscaped=true). HTMX injection triggers on any head element regardless of isLayout flag. All 96 template tests and all other tests still pass with no modifications needed."
+}
