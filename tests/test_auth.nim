@@ -559,7 +559,7 @@ suite "Auth - Handler Signup":
     check resp.status == 422
     db.close()
 
-  test "handleSignup with role creates user with that role":
+  test "handleSignup ignores role field from form to prevent privilege escalation":
     let (db, store, config) = setupAuthTestDb()
     let authCtx = AuthHandlerContext(db: db, store: store, config: config)
     let ctx = newCtx()
@@ -570,7 +570,8 @@ suite "Auth - Handler Signup":
     check resp.status == 302
     let user = findUserByEmail(db, "admin@example.com")
     check user != nil
-    check user.getString("role") == "admin"
+    # Role should be empty regardless of what was submitted in the form
+    check user.getString("role") == ""
     db.close()
 
 suite "Auth - Handler Login":
@@ -673,6 +674,11 @@ proc setupAuthServer(): DootServer =
   initAuth(db, config)
   let store = newSessionStore(db)
 
+  # Pre-create an admin user for role enforcement tests.
+  # This demonstrates the correct pattern: roles are assigned by backend logic,
+  # not by the signup form.
+  discard createUser(db, "admin@test.com", "adminpass123", "admin")
+
   var server = newDootServer(port = AuthTestPort)
   server.sessionStore = store
   server.db = db
@@ -771,11 +777,11 @@ suite "E2E Auth - Protected Routes":
 suite "E2E Auth - Role Enforcement":
   test "GET /admin returns 403 for non-admin user":
     let client = newHttpClient(maxRedirects = 0)
-    # Create a regular user
+    # Create a regular user via signup (no role assigned by signup handler)
     client.headers = newHttpHeaders({"Content-Type": "application/x-www-form-urlencoded"})
     let signupResp = client.request(authBaseUrl() & "/signup",
       httpMethod = HttpPost,
-      body = "email=regular@test.com&password=testpass123&role=user")
+      body = "email=regular@test.com&password=testpass123")
     check signupResp.code == Http302
     let setCookie = $signupResp.headers["set-cookie"]
     let cookieStart = setCookie.find("doot_session=") + 13
@@ -795,11 +801,12 @@ suite "E2E Auth - Role Enforcement":
   test "GET /admin returns 200 for admin user":
     let client = newHttpClient(maxRedirects = 0)
     client.headers = newHttpHeaders({"Content-Type": "application/x-www-form-urlencoded"})
-    let signupResp = client.request(authBaseUrl() & "/signup",
+    # Login as the pre-created admin user (roles are assigned by backend logic, not signup form)
+    let loginResp = client.request(authBaseUrl() & "/login",
       httpMethod = HttpPost,
-      body = "email=admin@test.com&password=adminpass123&role=admin")
-    check signupResp.code == Http302
-    let setCookie = $signupResp.headers["set-cookie"]
+      body = "email=admin@test.com&password=adminpass123")
+    check loginResp.code == Http302
+    let setCookie = $loginResp.headers["set-cookie"]
     let cookieStart = setCookie.find("doot_session=") + 13
     let cookieEnd = setCookie.find(";", cookieStart)
     let cookieValue = setCookie[cookieStart ..< cookieEnd]
@@ -1107,3 +1114,167 @@ suite "Email Verification Tokens":
     check result.record.getInt("email_verified") == 0
     db.close()
 
+# =============================================================================
+# Review Fix Tests: Role Self-Assignment Prevention
+# =============================================================================
+
+suite "Auth - Role Self-Assignment Prevention":
+  test "handleSignup ignores role from form body":
+    let (db, store, config) = setupAuthTestDb()
+    let authCtx = AuthHandlerContext(db: db, store: store, config: config)
+    let ctx = newCtx()
+    ctx.form["email"] = "attacker@example.com"
+    ctx.form["password"] = "password123"
+    ctx.form["role"] = "admin"  # Attacker tries to self-assign admin
+    let resp = handleSignup(authCtx, ctx)
+    check resp.status == 302
+    let user = findUserByEmail(db, "attacker@example.com")
+    check user != nil
+    check user.getString("role") == ""  # Role should be empty, not "admin"
+    db.close()
+
+  test "createUser still accepts role param for programmatic use":
+    let (db, store, config) = setupAuthTestDb()
+    # Direct API call (e.g., by admin logic) can still set role
+    let result = createUser(db, "admin@example.com", "password123", "admin")
+    check result.ok == true
+    check result.record.getString("role") == "admin"
+    db.close()
+
+# =============================================================================
+# Review Fix Tests: Schema Divergence
+# =============================================================================
+
+suite "Auth - Config-Driven DDL Generation":
+  test "generateUserTableDDL with roles and emailVerification includes all columns":
+    let config = newAuthConfig(roles = @["admin", "user"], emailVerification = true)
+    let ddl = generateUserTableDDL(config)
+    check "CREATE TABLE IF NOT EXISTS users" in ddl
+    check "role TEXT DEFAULT ''" in ddl
+    check "email_verified INTEGER DEFAULT 0" in ddl
+    check "email TEXT NOT NULL UNIQUE" in ddl
+    check "password_hash TEXT NOT NULL" in ddl
+
+  test "generateUserTableDDL without roles omits role column":
+    let config = newAuthConfig(roles = @[], emailVerification = true)
+    let ddl = generateUserTableDDL(config)
+    check "role" notin ddl
+    check "email_verified INTEGER DEFAULT 0" in ddl
+
+  test "generateUserTableDDL without emailVerification omits email_verified":
+    let config = newAuthConfig(roles = @["admin"], emailVerification = false)
+    let ddl = generateUserTableDDL(config)
+    check "role TEXT DEFAULT ''" in ddl
+    check "email_verified" notin ddl
+
+  test "generateUserTableDDL minimal config produces minimal DDL":
+    let config = newAuthConfig(roles = @[], emailVerification = false)
+    let ddl = generateUserTableDDL(config)
+    check "CREATE TABLE IF NOT EXISTS users" in ddl
+    check "email TEXT NOT NULL UNIQUE" in ddl
+    check "password_hash TEXT NOT NULL" in ddl
+    check "role" notin ddl
+    check "email_verified" notin ddl
+
+  test "initAuth creates table matching config (roles only)":
+    let db = open(":memory:", "", "", "")
+    let config = newAuthConfig(roles = @["admin", "user"], emailVerification = false)
+    initAuth(db, config)
+    # Verify the table has the role column but not email_verified
+    let result = createUser(db, "test@example.com", "pass", "admin")
+    check result.ok == true
+    check result.record.getString("role") == "admin"
+    db.close()
+
+  test "initAuth creates table matching config (minimal)":
+    let db = open(":memory:", "", "", "")
+    let config = newAuthConfig(roles = @[], emailVerification = false)
+    initAuth(db, config)
+    # User can be created without role or email_verified columns
+    let result = createUser(db, "test@example.com", "pass")
+    check result.ok == true
+    check result.record.getString("role") == ""
+    check result.record.getInt("email_verified") == 0
+    db.close()
+
+# =============================================================================
+# Review Fix Tests: authEnabled Auto-Set
+# =============================================================================
+
+suite "Auth - authEnabled Auto-Set":
+  test "registerAuthRoutes automatically sets authEnabled to true":
+    let db = open(":memory:", "", "", "")
+    let config = newAuthConfig(
+      roles = @["admin", "user"],
+      sessionSecret = "test-secret",
+      sessionExpiry = 14
+    )
+    initAuth(db, config)
+    let store = newSessionStore(db)
+    var server = newDootServer(port = 19999)
+    server.sessionStore = store
+    server.db = db
+    server.authConfig = config
+    # authEnabled starts as false
+    check server.authEnabled == false
+    # registerAuthRoutes should set it to true
+    registerAuthRoutes(server, db, config)
+    check server.authEnabled == true
+    db.close()
+
+# =============================================================================
+# Review Fix Tests: TOCTOU Race Handling
+# =============================================================================
+
+suite "Auth - TOCTOU Race Handling":
+  test "createUser handles concurrent duplicate email via UNIQUE constraint":
+    let (db, store, config) = setupAuthTestDb()
+    # First create succeeds
+    let r1 = createUser(db, "race@example.com", "pass1")
+    check r1.ok == true
+    # Second create with same email returns error (not an exception)
+    let r2 = createUser(db, "race@example.com", "pass2")
+    check r2.ok == false
+    check "Email already exists" in r2.errors[0]
+    db.close()
+
+# =============================================================================
+# Review Fix Tests: Session Cleanup on Startup
+# =============================================================================
+
+suite "Auth - Session Cleanup on Startup":
+  test "initAuth cleans up expired sessions":
+    let db = open(":memory:", "", "", "")
+    let config = newAuthConfig(
+      roles = @["admin", "user"],
+      emailVerification = true,
+      sessionSecret = "test-secret",
+      sessionExpiry = 14
+    )
+    # First create the session table manually
+    db.exec(sql(SessionTableSQL))
+    # Insert an expired session directly
+    let expiredTime = (now() - initDuration(days = 1)).format("yyyy-MM-dd HH:mm:ss")
+    db.exec(sql"""INSERT INTO _sessions (session_id, data, user_id, expires_at, created_at)
+                  VALUES (?, ?, ?, ?, ?)""",
+            "expired-session-abc", "{}", "1", expiredTime,
+            now().format("yyyy-MM-dd HH:mm:ss"))
+    # Insert a valid session
+    let validTime = (now() + initDuration(days = 7)).format("yyyy-MM-dd HH:mm:ss")
+    db.exec(sql"""INSERT INTO _sessions (session_id, data, user_id, expires_at, created_at)
+                  VALUES (?, ?, ?, ?, ?)""",
+            "valid-session-xyz", "{}", "2", validTime,
+            now().format("yyyy-MM-dd HH:mm:ss"))
+    # Now call initAuth which should cleanup expired sessions
+    initAuth(db, config)
+    # Expired session should be gone
+    let expired = db.getRow(
+      sql"SELECT session_id FROM _sessions WHERE session_id = ?",
+      "expired-session-abc")
+    check expired[0] == ""
+    # Valid session should still exist
+    let valid = db.getRow(
+      sql"SELECT session_id FROM _sessions WHERE session_id = ?",
+      "valid-session-xyz")
+    check valid[0] == "valid-session-xyz"
+    db.close()

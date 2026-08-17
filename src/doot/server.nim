@@ -61,6 +61,8 @@ proc registerRoute*(server: DootServer, httpMethod: DootHttpMethod, pattern: str
 proc registerAuthRoutes*(server: DootServer, db: DbConn, config: AuthConfig) =
   ## Register built-in auth routes (signup, login, logout) on the server.
   ## These routes are public (no auth required).
+  ## Automatically enables auth enforcement on the server.
+  server.authEnabled = true
   let store = server.sessionStore
   let authCtx = AuthHandlerContext(db: db, store: store, config: config)
 
