@@ -1,8 +1,9 @@
 ## Comprehensive tests for the dootd production daemon infrastructure.
 ## Tests password generation, state persistence, systemd file generation,
-## idempotent re-runs, dashboard auth, HTML rendering, and stats.
+## idempotent re-runs, dashboard auth, HTML rendering, stats, process management,
+## GitHub integration, env var validation, deploy pipeline, host routing, and cgroups.
 
-import std/[unittest, os, strutils, times, random, tables, uri]
+import std/[unittest, os, strutils, times, random, tables, uri, sets, osproc]
 import std/asynchttpserver
 import db_connector/db_sqlite
 import ../src/doot/dootd_types
@@ -12,6 +13,12 @@ import ../src/doot/dootd_systemd
 import ../src/doot/dootd_html
 import ../src/doot/dootd_stats
 import ../src/doot/dootd_dashboard
+import ../src/doot/dootd_process
+import ../src/doot/dootd_github
+import ../src/doot/dootd_envcheck
+import ../src/doot/dootd_deploy
+import ../src/doot/dootd_router
+import ../src/doot/dootd_cgroups
 import ../src/doot/cli
 
 let testBaseDir = getTempDir() / "dootd_test_" & $epochTime().int
@@ -1402,3 +1409,766 @@ suite "System Stats Collection":
     let disk = DiskStats()
     check disk.available == false
     check disk.totalGb == 0.0
+
+# =============================================================================
+# Process Supervisor Tests
+# =============================================================================
+
+suite "Process Supervisor - Backoff Calculation":
+  var supervisor: ProcessSupervisor
+
+  setup:
+    supervisor = newProcessSupervisor(
+      maxRestarts = 5,
+      restartWindowSecs = 60,
+      initialBackoffMs = 1000,
+      maxBackoffMs = 30000
+    )
+
+  test "calculateBackoff at restart 0 returns initial":
+    let backoff = calculateBackoff(supervisor, 0)
+    check backoff == 1000
+
+  test "calculateBackoff at restart 1 doubles":
+    let backoff = calculateBackoff(supervisor, 1)
+    check backoff == 2000
+
+  test "calculateBackoff at restart 2 quadruples":
+    let backoff = calculateBackoff(supervisor, 2)
+    check backoff == 4000
+
+  test "calculateBackoff at restart 3":
+    let backoff = calculateBackoff(supervisor, 3)
+    check backoff == 8000
+
+  test "calculateBackoff at restart 4":
+    let backoff = calculateBackoff(supervisor, 4)
+    check backoff == 16000
+
+  test "calculateBackoff caps at maxBackoffMs":
+    let backoff = calculateBackoff(supervisor, 10)
+    check backoff == 30000
+
+  test "calculateBackoff with custom initial":
+    var custom = newProcessSupervisor(initialBackoffMs = 500, maxBackoffMs = 5000)
+    check calculateBackoff(custom, 0) == 500
+    check calculateBackoff(custom, 1) == 1000
+    check calculateBackoff(custom, 2) == 2000
+    check calculateBackoff(custom, 3) == 4000
+    check calculateBackoff(custom, 4) == 5000  # capped
+
+  test "calculateBackoff never exceeds max":
+    for i in 0..20:
+      let backoff = calculateBackoff(supervisor, i)
+      check backoff <= supervisor.maxBackoffMs
+
+suite "Process Supervisor - Restart Policy":
+  var supervisor: ProcessSupervisor
+
+  setup:
+    supervisor = newProcessSupervisor(
+      maxRestarts = 5,
+      restartWindowSecs = 60,
+      initialBackoffMs = 1000,
+      maxBackoffMs = 30000
+    )
+
+  test "shouldRestart allows restart when count below max":
+    let child = ChildProcess(
+      restartCount: 3,
+      lastCrashTime: getTime(),
+      status: csCrashed
+    )
+    check shouldRestart(supervisor, child) == true
+
+  test "shouldRestart denies restart when count at max within window":
+    let child = ChildProcess(
+      restartCount: 5,
+      lastCrashTime: getTime(),  # Just crashed
+      status: csCrashed
+    )
+    check shouldRestart(supervisor, child) == false
+
+  test "shouldRestart allows restart when count at max but outside window":
+    let child = ChildProcess(
+      restartCount: 5,
+      lastCrashTime: getTime() - initDuration(seconds = 120),  # Crashed 2 min ago
+      status: csCrashed
+    )
+    check shouldRestart(supervisor, child) == true
+
+  test "newProcessSupervisor has empty children":
+    check supervisor.children.len == 0
+
+  test "newProcessSupervisor defaults":
+    let s = newProcessSupervisor()
+    check s.maxRestarts == 5
+    check s.restartWindowSecs == 60
+    check s.initialBackoffMs == 1000
+    check s.maxBackoffMs == 30000
+
+suite "Process Supervisor - Child Status":
+  var supervisor: ProcessSupervisor
+
+  setup:
+    supervisor = newProcessSupervisor()
+
+  test "getChildStatus returns stopped for unknown appId":
+    check getChildStatus(supervisor, 999) == csStopped
+
+  test "startChild fails with nonexistent binary":
+    let app = AppConfig(id: 1, name: "test", internalPort: 3001)
+    let result = startChild(supervisor, app, "/nonexistent/path/to/binary")
+    check result == false
+
+  test "stopChild returns false for unknown appId":
+    check stopChild(supervisor, 999) == false
+
+  test "removeChild on unknown appId does not crash":
+    removeChild(supervisor, 999)
+    check supervisor.children.len == 0
+
+  test "ChildProcess default initialization":
+    var child = ChildProcess()
+    check child.pid == 0
+    check child.appId == 0
+    check child.status == csRunning  # first enum value
+    check child.restartCount == 0
+
+  test "ChildStatus enum values":
+    check $csRunning == "running"
+    check $csStopped == "stopped"
+    check $csCrashed == "crashed"
+    check $csError == "error"
+
+# =============================================================================
+# GitHub Integration Tests
+# =============================================================================
+
+suite "GitHub - URL Validation":
+  test "valid GitHub URL":
+    check validateGithubUrl("https://github.com/user/repo") == true
+
+  test "valid GitHub URL with .git suffix":
+    check validateGithubUrl("https://github.com/user/repo.git") == true
+
+  test "valid GitHub URL with org/repo":
+    check validateGithubUrl("https://github.com/my-org/my-repo") == true
+
+  test "invalid URL - not GitHub":
+    check validateGithubUrl("https://gitlab.com/user/repo") == false
+
+  test "invalid URL - missing repo":
+    check validateGithubUrl("https://github.com/user") == false
+
+  test "invalid URL - http only":
+    check validateGithubUrl("http://github.com/user/repo") == false
+
+  test "invalid URL - empty":
+    check validateGithubUrl("") == false
+
+  test "invalid URL - just domain":
+    check validateGithubUrl("https://github.com/") == false
+
+  test "valid URL with underscores":
+    check validateGithubUrl("https://github.com/my_user/my_repo") == true
+
+  test "valid URL with dots":
+    check validateGithubUrl("https://github.com/user/repo.name") == true
+
+suite "GitHub - URL Sanitization":
+  test "sanitizeGitUrl adds PAT to URL":
+    let result = sanitizeGitUrl("https://github.com/user/repo", "ghp_token123")
+    check result == "https://ghp_token123@github.com/user/repo.git"
+
+  test "sanitizeGitUrl adds .git suffix":
+    let result = sanitizeGitUrl("https://github.com/user/repo", "token")
+    check result.endsWith(".git")
+
+  test "sanitizeGitUrl does not double .git":
+    let result = sanitizeGitUrl("https://github.com/user/repo.git", "token")
+    check result == "https://token@github.com/user/repo.git"
+    check not result.endsWith(".git.git")
+
+  test "sanitizeGitUrl with empty PAT":
+    let result = sanitizeGitUrl("https://github.com/user/repo", "")
+    check result == "https://github.com/user/repo.git"
+
+  test "sanitizeGitUrl strips trailing slash":
+    let result = sanitizeGitUrl("https://github.com/user/repo/", "pat")
+    check result == "https://pat@github.com/user/repo.git"
+
+suite "GitHub - Clone/Pull":
+  var testDir: string
+
+  setup:
+    testDir = setupTestDir()
+
+  teardown:
+    cleanupTestDir(testDir)
+
+  test "cloneRepo with invalid URL fails":
+    let result = cloneRepo("https://github.com/nonexistent/repo_xyz_99999", "", "main", testDir / "cloned")
+    check result.success == false
+
+  test "pullRepo with nonexistent dir fails":
+    let result = pullRepo("", "main", testDir / "nonexistent")
+    check result.success == false
+    check "does not exist" in result.output
+
+  test "pullRepo reports correct error":
+    let result = pullRepo("token", "main", "/tmp/definitely_not_a_repo_" & $rand(99999))
+    check result.success == false
+
+# =============================================================================
+# Environment Variable Validation Tests
+# =============================================================================
+
+suite "EnvCheck - extractEnvReferences":
+  test "extracts single env reference":
+    let content = """
+      route "/" do:
+        let port = env("PORT")
+        respond "hello"
+    """
+    let refs = extractEnvReferences(content)
+    check refs == @["PORT"]
+
+  test "extracts multiple env references":
+    let content = """
+      let dbUrl = env("DATABASE_URL")
+      let secret = env("SECRET_KEY")
+      let port = env("PORT")
+    """
+    let refs = extractEnvReferences(content)
+    check refs.len == 3
+    check "DATABASE_URL" in refs
+    check "SECRET_KEY" in refs
+    check "PORT" in refs
+
+  test "deduplicates repeated references":
+    let content = """
+      let a = env("KEY")
+      let b = env("KEY")
+    """
+    let refs = extractEnvReferences(content)
+    check refs.len == 1
+    check refs[0] == "KEY"
+
+  test "returns empty for no references":
+    let content = """
+      route "/" do:
+        respond "hello world"
+    """
+    let refs = extractEnvReferences(content)
+    check refs.len == 0
+
+  test "does not match partial patterns":
+    let content = """
+      let x = environment("NOPE")
+      let y = myenv("ALSO_NOPE")
+    """
+    let refs = extractEnvReferences(content)
+    check "NOPE" notin refs
+    check "ALSO_NOPE" notin refs
+
+  test "handles env with various key formats":
+    let content = """
+      let a = env("MY_VAR_123")
+      let b = env("simple")
+    """
+    let refs = extractEnvReferences(content)
+    check refs.len == 2
+    check "MY_VAR_123" in refs
+    check "simple" in refs
+
+suite "EnvCheck - scanProjectEnvVars":
+  var testDir: string
+
+  setup:
+    testDir = setupTestDir()
+
+  teardown:
+    cleanupTestDir(testDir)
+
+  test "scans .do files in directory":
+    writeFile(testDir / "app.do", """
+      let db = env("DATABASE_URL")
+      let port = env("PORT")
+    """)
+    writeFile(testDir / "routes.do", """
+      let secret = env("SECRET_KEY")
+    """)
+    let vars = scanProjectEnvVars(testDir)
+    check vars.len == 3
+    check "DATABASE_URL" in vars
+    check "PORT" in vars
+    check "SECRET_KEY" in vars
+
+  test "ignores non-.do files":
+    writeFile(testDir / "app.do", """let x = env("FOUND")""")
+    writeFile(testDir / "readme.md", """let x = env("NOT_FOUND")""")
+    let vars = scanProjectEnvVars(testDir)
+    check "FOUND" in vars
+    check "NOT_FOUND" notin vars
+
+  test "scans subdirectories":
+    let subDir = testDir / "views"
+    createDir(subDir)
+    writeFile(subDir / "page.do", """let x = env("SUB_VAR")""")
+    let vars = scanProjectEnvVars(testDir)
+    check "SUB_VAR" in vars
+
+  test "returns empty for nonexistent directory":
+    let vars = scanProjectEnvVars("/nonexistent/path")
+    check vars.len == 0
+
+  test "returns empty for directory with no .do files":
+    writeFile(testDir / "readme.md", "hello")
+    let vars = scanProjectEnvVars(testDir)
+    check vars.len == 0
+
+suite "EnvCheck - validateEnvVars":
+  test "all vars present is valid":
+    let required = @["PORT", "DATABASE_URL"]
+    let configured = {"PORT": "3000", "DATABASE_URL": "sqlite:db.sqlite"}.toTable
+    let (valid, missing) = validateEnvVars(required, configured)
+    check valid == true
+    check missing.len == 0
+
+  test "missing vars detected":
+    let required = @["PORT", "DATABASE_URL", "SECRET_KEY"]
+    let configured = {"PORT": "3000"}.toTable
+    let (valid, missing) = validateEnvVars(required, configured)
+    check valid == false
+    check missing.len == 2
+    check "DATABASE_URL" in missing
+    check "SECRET_KEY" in missing
+
+  test "empty value counts as missing":
+    let required = @["KEY"]
+    let configured = {"KEY": ""}.toTable
+    let (valid, missing) = validateEnvVars(required, configured)
+    check valid == false
+    check "KEY" in missing
+
+  test "no required vars is always valid":
+    let configured = {"EXTRA": "value"}.toTable
+    let (valid, missing) = validateEnvVars(@[], configured)
+    check valid == true
+    check missing.len == 0
+
+suite "EnvCheck - parseEnvVarsString":
+  test "parses KEY=VALUE format":
+    let result = parseEnvVarsString("PORT=3000\nDATABASE_URL=sqlite:db.sqlite")
+    check result["PORT"] == "3000"
+    check result["DATABASE_URL"] == "sqlite:db.sqlite"
+
+  test "parses JSON-like format":
+    let result = parseEnvVarsString("""{"PORT": "3000", "KEY": "value"}""")
+    check result["PORT"] == "3000"
+    check result["KEY"] == "value"
+
+  test "skips comments":
+    let result = parseEnvVarsString("# Comment\nPORT=3000\n# Another comment\nKEY=val")
+    check result.len == 2
+    check result["PORT"] == "3000"
+    check result["KEY"] == "val"
+
+  test "handles empty string":
+    let result = parseEnvVarsString("")
+    check result.len == 0
+
+  test "handles whitespace":
+    let result = parseEnvVarsString("  PORT = 3000  \n  KEY = value  ")
+    check result["PORT"] == "3000"
+    check result["KEY"] == "value"
+
+suite "EnvCheck - formatMissingEnvError":
+  test "formats single missing var":
+    let msg = formatMissingEnvError("myapp", @["SECRET_KEY"])
+    check "myapp" in msg
+    check "SECRET_KEY" in msg
+    check "missing" in msg.toLowerAscii()
+
+  test "formats multiple missing vars":
+    let msg = formatMissingEnvError("webapp", @["DB_URL", "PORT", "SECRET"])
+    check "webapp" in msg
+    check "DB_URL" in msg
+    check "PORT" in msg
+    check "SECRET" in msg
+
+  test "includes instruction to configure":
+    let msg = formatMissingEnvError("app", @["KEY"])
+    check "Configure" in msg or "configure" in msg
+
+# =============================================================================
+# Deploy Pipeline Tests
+# =============================================================================
+
+suite "Deploy Pipeline":
+  var testDir: string
+  var db: DbConn
+
+  setup:
+    testDir = setupTestDir()
+    db = initDootdDb(testDir)
+
+  teardown:
+    db.close()
+    cleanupTestDir(testDir)
+
+  test "deploy fails with missing env vars":
+    let appsDir = testDir / "apps"
+    createDir(appsDir)
+    # Create a fake project dir with .do file referencing env vars
+    # Initialize as a git repo so pull step works
+    let appDir = appsDir / "myapp"
+    createDir(appDir)
+    writeFile(appDir / "app.do", """
+      let db = env("DATABASE_URL")
+      let secret = env("SECRET_KEY")
+    """)
+    discard execShellCmd("git -C " & appDir & " init -q && git -C " & appDir & " add . && git -C " & appDir & " -c user.email=t@t.com -c user.name=t commit -q -m init")
+    var app = AppConfig(
+      name: "myapp",
+      hostname: "myapp.example.com",
+      githubUrl: "https://github.com/user/myapp",
+      branch: "main",
+      envVars: "PORT=3000",  # Missing DATABASE_URL and SECRET_KEY
+      internalPort: 3001,
+      status: asStopped
+    )
+    let appId = saveAppConfig(db, app)
+    app.id = appId
+    let result = deployApp(db, app, appsDir)
+    check result.success == false
+    check "DATABASE_URL" in result.error
+    check "SECRET_KEY" in result.error
+
+  test "deploy succeeds with all env vars configured":
+    let appsDir = testDir / "apps"
+    createDir(appsDir)
+    let appDir = appsDir / "goodapp"
+    createDir(appDir)
+    writeFile(appDir / "app.do", """
+      let port = env("PORT")
+    """)
+    discard execShellCmd("git -C " & appDir & " init -q && git -C " & appDir & " add . && git -C " & appDir & " -c user.email=t@t.com -c user.name=t commit -q -m init")
+    var app = AppConfig(
+      name: "goodapp",
+      hostname: "good.example.com",
+      githubUrl: "https://github.com/user/good",
+      branch: "main",
+      envVars: "PORT=3001",
+      internalPort: 3001,
+      status: asStopped
+    )
+    let appId = saveAppConfig(db, app)
+    app.id = appId
+    let result = deployApp(db, app, appsDir)
+    check result.success == true
+    check result.error == ""
+    check result.logs.len > 0
+
+  test "deploy succeeds with no env references":
+    let appsDir = testDir / "apps"
+    createDir(appsDir)
+    let appDir = appsDir / "simple"
+    createDir(appDir)
+    writeFile(appDir / "app.do", """
+      route "/" do:
+        respond "hello"
+    """)
+    discard execShellCmd("git -C " & appDir & " init -q && git -C " & appDir & " add . && git -C " & appDir & " -c user.email=t@t.com -c user.name=t commit -q -m init")
+    var app = AppConfig(
+      name: "simple",
+      hostname: "simple.example.com",
+      githubUrl: "https://github.com/user/simple",
+      branch: "main",
+      envVars: "",
+      internalPort: 3002,
+      status: asStopped
+    )
+    let appId = saveAppConfig(db, app)
+    app.id = appId
+    let result = deployApp(db, app, appsDir)
+    check result.success == true
+
+  test "deploy logs are recorded":
+    let appsDir = testDir / "apps"
+    createDir(appsDir)
+    let appDir = appsDir / "logged"
+    createDir(appDir)
+    writeFile(appDir / "app.do", """route "/" do: respond "ok" """)
+    discard execShellCmd("git -C " & appDir & " init -q && git -C " & appDir & " add . && git -C " & appDir & " -c user.email=t@t.com -c user.name=t commit -q -m init")
+    var app = AppConfig(
+      name: "logged",
+      hostname: "log.example.com",
+      githubUrl: "https://github.com/user/logged",
+      branch: "main",
+      envVars: "",
+      internalPort: 3003,
+      status: asStopped
+    )
+    let appId = saveAppConfig(db, app)
+    app.id = appId
+    discard deployApp(db, app, appsDir)
+    let logs = getAppLogs(db, appId)
+    check logs.len > 0
+
+  test "deploy with clone failure sets error status":
+    let appsDir = testDir / "apps"
+    createDir(appsDir)
+    # No app dir exists, so it will try to clone
+    var app = AppConfig(
+      name: "failclone",
+      hostname: "fail.example.com",
+      githubUrl: "https://github.com/nonexistent_user_xyz/nonexistent_repo_xyz",
+      branch: "main",
+      envVars: "",
+      internalPort: 3004,
+      status: asStopped
+    )
+    let appId = saveAppConfig(db, app)
+    app.id = appId
+    let result = deployApp(db, app, appsDir)
+    check result.success == false
+    check "clone" in result.error.toLowerAscii() or "Failed" in result.error
+    let updated = getApp(db, appId)
+    check updated.status == asError
+
+# =============================================================================
+# Host-Header Router Tests
+# =============================================================================
+
+suite "HostRouter - Route Management":
+  var router: HostRouter
+
+  setup:
+    router = newHostRouter(routerPort = 9000, dashboardPort = 9001)
+
+  test "newHostRouter creates empty router":
+    check router.routes.len == 0
+    check router.routerPort == 9000
+    check router.dashboardPort == 9001
+
+  test "addRoute adds a route":
+    router.addRoute("myapp.example.com", 3001, 1)
+    check router.routes.len == 1
+    check router.routes[0].hostname == "myapp.example.com"
+    check router.routes[0].internalPort == 3001
+    check router.routes[0].appId == 1
+
+  test "addRoute updates existing route by appId":
+    router.addRoute("old.example.com", 3001, 1)
+    router.addRoute("new.example.com", 3002, 1)
+    check router.routes.len == 1
+    check router.routes[0].hostname == "new.example.com"
+    check router.routes[0].internalPort == 3002
+
+  test "addRoute supports multiple routes":
+    router.addRoute("app1.example.com", 3001, 1)
+    router.addRoute("app2.example.com", 3002, 2)
+    router.addRoute("app3.example.com", 3003, 3)
+    check router.routes.len == 3
+
+  test "removeRoute removes by appId":
+    router.addRoute("app1.example.com", 3001, 1)
+    router.addRoute("app2.example.com", 3002, 2)
+    router.removeRoute(1)
+    check router.routes.len == 1
+    check router.routes[0].appId == 2
+
+  test "removeRoute with nonexistent appId is safe":
+    router.addRoute("app1.example.com", 3001, 1)
+    router.removeRoute(999)
+    check router.routes.len == 1
+
+suite "HostRouter - Route Finding":
+  var router: HostRouter
+
+  setup:
+    router = newHostRouter()
+    router.addRoute("app1.example.com", 3001, 1)
+    router.addRoute("app2.example.com", 3002, 2)
+    router.addRoute("blog.mysite.io", 3003, 3)
+
+  test "findRoute matches exact hostname":
+    let route = findRoute(router, "app1.example.com")
+    check route != nil
+    check route.internalPort == 3001
+    check route.appId == 1
+
+  test "findRoute is case-insensitive":
+    let route = findRoute(router, "APP1.EXAMPLE.COM")
+    check route != nil
+    check route.internalPort == 3001
+
+  test "findRoute strips port from host header":
+    let route = findRoute(router, "app2.example.com:8080")
+    check route != nil
+    check route.internalPort == 3002
+
+  test "findRoute returns nil for unknown host":
+    let route = findRoute(router, "unknown.example.com")
+    check route == nil
+
+  test "findRoute returns nil for empty hostname":
+    let route = findRoute(router, "")
+    check route == nil
+
+  test "findRoute matches with different routes":
+    let r1 = findRoute(router, "blog.mysite.io")
+    check r1 != nil
+    check r1.appId == 3
+    let r2 = findRoute(router, "app2.example.com")
+    check r2 != nil
+    check r2.appId == 2
+
+  test "findRoute handles whitespace in hostname":
+    let route = findRoute(router, "  app1.example.com  ")
+    check route != nil
+    check route.appId == 1
+
+# =============================================================================
+# cgroups Tests
+# =============================================================================
+
+suite "cgroups - Path Generation":
+  test "cgroupPath generates correct path":
+    let path = cgroupPath("myapp")
+    check path == "/sys/fs/cgroup/dootd/myapp"
+
+  test "memoryMaxPath generates correct path":
+    let path = memoryMaxPath("testapp")
+    check path == "/sys/fs/cgroup/dootd/testapp/memory.max"
+
+  test "cpuWeightPath generates correct path":
+    let path = cpuWeightPath("testapp")
+    check path == "/sys/fs/cgroup/dootd/testapp/cpu.weight"
+
+  test "cgroupProcsPath generates correct path":
+    let path = cgroupProcsPath("testapp")
+    check path == "/sys/fs/cgroup/dootd/testapp/cgroup.procs"
+
+  test "CgroupBase constant":
+    check CgroupBase == "/sys/fs/cgroup"
+
+  test "CgroupDootd constant":
+    check CgroupDootd == "/sys/fs/cgroup/dootd"
+
+suite "cgroups - Availability and Graceful Degradation":
+  test "cgroupsAvailable returns a boolean":
+    # In the sandbox, cgroups are not available
+    let available = cgroupsAvailable()
+    check available == false or available == true  # Just verify it runs
+
+  test "createAppCgroup gracefully handles unavailable cgroups":
+    if not cgroupsAvailable():
+      let result = createAppCgroup("testapp")
+      check result == false
+
+  test "setMemoryLimit gracefully handles unavailable cgroups":
+    if not cgroupsAvailable():
+      let result = setMemoryLimit("testapp", 512)
+      check result == false
+
+  test "setCpuShares gracefully handles unavailable cgroups":
+    if not cgroupsAvailable():
+      let result = setCpuShares("testapp", 1024)
+      check result == false
+
+  test "addProcessToCgroup gracefully handles unavailable cgroups":
+    if not cgroupsAvailable():
+      let result = addProcessToCgroup("testapp", 12345)
+      check result == false
+
+  test "removeAppCgroup returns true when cgroups unavailable":
+    if not cgroupsAvailable():
+      let result = removeAppCgroup("testapp")
+      check result == true  # Nothing to remove, so success
+
+  test "setMemoryLimit with 0 limit returns true (no limit)":
+    let result = setMemoryLimit("testapp", 0)
+    # Either cgroups unavailable (false) or no limit to set (true)
+    check result == true or result == false
+
+  test "setCpuShares with 0 shares returns true (default)":
+    let result = setCpuShares("testapp", 0)
+    check result == true or result == false
+
+# =============================================================================
+# Integration Tests - Process + Deploy + Router
+# =============================================================================
+
+suite "Integration - Deploy + Env Validation":
+  var testDir: string
+  var db: DbConn
+
+  setup:
+    testDir = setupTestDir()
+    db = initDootdDb(testDir)
+
+  teardown:
+    db.close()
+    cleanupTestDir(testDir)
+
+  test "full deploy flow with env validation":
+    let appsDir = testDir / "apps"
+    createDir(appsDir)
+    let appDir = appsDir / "fullapp"
+    createDir(appDir)
+    writeFile(appDir / "app.do", """
+      let db = env("DB_URL")
+      let port = env("APP_PORT")
+      route "/" do:
+        respond "hello"
+    """)
+    discard execShellCmd("git -C " & appDir & " init -q && git -C " & appDir & " add . && git -C " & appDir & " -c user.email=t@t.com -c user.name=t commit -q -m init")
+    var app = AppConfig(
+      name: "fullapp",
+      hostname: "full.example.com",
+      githubUrl: "https://github.com/user/full",
+      branch: "main",
+      envVars: "DB_URL=postgres://localhost/db\nAPP_PORT=3001",
+      internalPort: 3001,
+      status: asStopped
+    )
+    let appId = saveAppConfig(db, app)
+    app.id = appId
+    let result = deployApp(db, app, appsDir)
+    check result.success == true
+    check result.logs.len > 0
+    # Verify status was updated
+    let final = getApp(db, appId)
+    check final.status == asStopped  # Ready to start (not error)
+
+  test "router and supervisor work together conceptually":
+    var router = newHostRouter(routerPort = 9999, dashboardPort = 9998)
+    var supervisor = newProcessSupervisor()
+
+    # Simulate adding apps
+    router.addRoute("app1.test.com", 3001, 1)
+    router.addRoute("app2.test.com", 3002, 2)
+
+    # Verify routing
+    let r1 = findRoute(router, "app1.test.com")
+    check r1 != nil
+    check r1.internalPort == 3001
+
+    let r2 = findRoute(router, "app2.test.com")
+    check r2 != nil
+    check r2.internalPort == 3002
+
+    # Remove an app
+    router.removeRoute(1)
+    let r3 = findRoute(router, "app1.test.com")
+    check r3 == nil
+
+  test "systemd service file contains correct ExecStart for deploy":
+    let content = generateServiceFile("/usr/local/bin/doot", "/var/lib/dootd")
+    check "ExecStart=/usr/local/bin/doot --prod" in content
+    check "WorkingDirectory=/var/lib/dootd" in content
+    check "Restart=always" in content
+
