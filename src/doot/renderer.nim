@@ -392,7 +392,7 @@ proc renderElement*(node: DootNode, ctx: TemplateContext): string =
       let cssContent = readFile(cssPath)
       return "<style>" & cssContent & "</style>\n"
     else:
-      return "<style>/* File not found: " & cssFile & " */</style>\n"
+      return "<style>/* File not found: " & escapeHtml(cssFile) & " */</style>\n"
 
   # Build opening tag
   var html = "<" & tag
@@ -493,7 +493,7 @@ proc renderPartial*(node: DootNode, ctx: TemplateContext): string =
   ## Render a partial template with its own locals.
   ## Includes depth guard to prevent infinite recursion from self-referencing partials.
   if ctx.partialDepth >= MaxPartialDepth:
-    return "<!-- partial recursion limit reached: " & node.partialPath & " -->"
+    return "<!-- partial recursion limit reached: " & escapeHtml(node.partialPath) & " -->"
 
   let partialPath = node.partialPath
 
@@ -519,7 +519,7 @@ proc renderPartial*(node: DootNode, ctx: TemplateContext): string =
       resolvedPath = basePath & ".do"
 
   if resolvedPath == "":
-    return "<!-- partial not found: " & partialPath & " -->"
+    return "<!-- partial not found: " & escapeHtml(partialPath) & " -->"
 
   # Validate path stays within viewsDir (prevent path traversal)
   if not isPathSafe(resolvedPath, ctx.viewsDir):
@@ -612,8 +612,10 @@ proc resolveInheritance*(tmplAst: DootNode, ctx: TemplateContext): string =
 
     # Load the parent/layout template
     let layoutPath = ctx.viewsDir / tmplAst.tmplExtends & ".do"
+    if not isPathSafe(layoutPath, ctx.viewsDir):
+      return "<!-- layout path traversal blocked: " & escapeHtml(tmplAst.tmplExtends) & " -->"
     if not fileExists(layoutPath):
-      return "<!-- layout not found: " & tmplAst.tmplExtends & " -->"
+      return "<!-- layout not found: " & escapeHtml(tmplAst.tmplExtends) & " -->"
 
     let layoutSource = readFile(layoutPath)
     var layoutAst: DootNode
