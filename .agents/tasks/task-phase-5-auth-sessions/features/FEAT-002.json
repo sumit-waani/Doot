@@ -2,7 +2,7 @@
   "id": "FEAT-002",
   "type": "feat",
   "description": "Implement the auth module: user table DDL generation, user CRUD (create/find/verify), session cookie integration (HMAC signing into session.nim), auth middleware that populates ctx.currentUser, and the built-in signup/login/logout route handlers. Wire auth enforcement into server.nim replacing the Phase 3 no-op.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create src/doot/auth.nim - the main auth module that ties everything together. It should import crypto, session, db_types, query, and db_connector/db_sqlite.",
     "In auth.nim, define AuthConfig type: model name, roles seq, emailVerification bool, sessionSecret string, sessionExpiry (Duration, default 14 days).",
@@ -45,5 +45,5 @@
     "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc -r tests/test_http_integration.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All 96 tests pass (36 crypto + 60 auth). The registerAuthRoutes proc must live in server.nim (not auth.nim) to avoid circular dependency since auth.nim cannot import server.nim. With auto type parameter, Nim cannot resolve registerRoute from inside auth.nim because the proc is not visible there. HttpClient follows redirects by default - E2E tests must use maxRedirects=0 when testing POST endpoints that return 302. The db_connector/db_sqlite module exports a Row type (seq[string]) that conflicts with db_types.Row - use 'import db_connector/db_sqlite except Row' to resolve. Auth enforcement is gated by server.authEnabled flag so existing tests with authEnabled=false continue to work without session cookies."
 }
