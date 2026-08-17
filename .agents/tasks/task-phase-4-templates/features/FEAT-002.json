@@ -1,0 +1,49 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Implement the core template renderer (src/doot/renderer.nim) that walks template AST nodes and produces HTML output. This is the main Phase 4 deliverable: it takes parsed AST from the existing parser and produces rendered HTML with proper escaping, element rendering, class/ID shorthand, attributes, expression evaluation, control flow, inheritance, partials, doctype, style-embed, and HTMX auto-injection.",
+  "status": "completed",
+  "steps": [
+    "Create src/doot/renderer.nim with a TemplateContext type holding: locals (Table[string, DootValue]), a DootValue variant type (string, int, bool, nil, seq, object/table), the project views directory path, and the static directory path",
+    "Implement DootValue type as an object variant: dvString, dvInt, dvBool, dvNil, dvSeq (seq[DootValue]), dvObject (Table[string, DootValue]). Include helper procs: toStr, toBool (truthiness), isEmptyCollection",
+    "Implement HTML auto-escaping proc: escapeHtml(s: string): string that escapes <, >, &, \", ' to their HTML entities (&lt; &gt; &amp; &quot; &#x27;)",
+    "Implement expression evaluation: evalExpr(node: DootNode, ctx: TemplateContext): DootValue. Handle nkIdentifier (lookup in ctx.locals), nkMemberAccess (nested lookup or .empty? / .count method), nkMethodCall (.truncate, .count, .empty?), nkStringLit (including interpolation via strInterpolations), nkIntLit, nkBoolLit, nkNil, nkBinaryOp (||, &&, ==, !=), nkUnaryOp (!)",
+    "Implement element rendering: renderElement(node: DootNode, ctx: TemplateContext, indent: int): string. Handle elemTag, elemClasses (joined with space into class attr), elemId (id attr), elemAttrs (key=value pairs with interpolation), elemText (with interpolation), elemExprOutput (escaped or raw based on elemEscaped), elemChildren (recursive). Void elements (br, hr, img, input, link, meta, area, base, col, embed, source, track, wbr) self-close without children.",
+    "Implement control flow rendering: renderTemplateIf (evaluate condition truthiness, render tmplIfThen or tmplIfElse), renderTemplateEach (iterate collection, add loop variable to locals copy, render body for each item)",
+    "Implement nkExprOutput rendering: evaluate expression, if escaped apply escapeHtml, return as string",
+    "Implement nkText rendering: return textContent directly (already literal)",
+    "Implement doctype handling: when elemTag is 'doctype' with text 'html', render <!DOCTYPE html>",
+    "Implement style-embed directive: when elemTag is 'style-embed', read the CSS file from static/ directory, wrap content in <style>...</style>",
+    "Implement inheritance system: renderTemplate proc that (1) parses layout file if tmplExtends is set, (2) collects block definitions from child template, (3) renders layout body substituting block references with child block content or defaults. Support deep inheritance chains by recursively resolving extends. Default block values via the pattern `title= block title || \"default\"` (detect nkBinaryOp with || where left side references a block name)",
+    "Implement partials: when encountering nkPartial node, resolve the partial file path (views/ + partialPath + .do or _partialPath.do), parse it with Template mode lexer+parser, render with a fresh TemplateContext containing only the explicitly passed locals",
+    "Implement HTMX auto-injection: when rendering the <head> element in a layout (or any template that is the root/layout), automatically insert <script src=\"/__doot/htmx.min.js\"></script> before </head>",
+    "Update src/doot/response.nim: replace the renderResponse stub with a real implementation that calls the renderer. Accept a Table[string, DootValue] for locals (keep backward compat by also supporting Table[string, string] via conversion). The function should: resolve template path to views/path.do, tokenize in Template mode, parse, then call the renderer",
+    "Ensure renderResponse handles both templates with extends (inheritance) and standalone templates (no extends, just direct rendering of body)"
+  ],
+  "acceptance_criteria": [
+    "div.post-card renders as <div class=\"post-card\"></div>",
+    "h1= post.title renders the title with HTML entities escaped (< becomes &lt; etc.)",
+    "!= raw_html renders without escaping",
+    "extends \"layouts/base\" correctly wraps content in the layout",
+    "Multiple named blocks (block title, block content, block head) all resolve correctly",
+    "Default block values work: block title || \"Doot App\" uses default when child does not override",
+    "partial \"partials/comment_form\", post: post renders the partial with passed locals",
+    "each post in posts iterates and renders body for each item",
+    "if posts.empty? / else conditional rendering works",
+    "style-embed \"app.css\" inlines CSS in a <style> tag",
+    "HTMX script tag is automatically injected in layouts",
+    "doctype html renders as <!DOCTYPE html>",
+    "String interpolation in text and attributes works with #{expr}",
+    "input#email renders as <input id=\"email\">",
+    "div.card.highlighted renders as <div class=\"card highlighted\"></div>",
+    "Attributes render correctly: a href=\"/posts\" \"All Posts\" becomes <a href=\"/posts\">All Posts</a>",
+    "All existing 373 tests still pass after changes to response.nim"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot/renderer.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot/response.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_lexer.nim && nim c -r tests/test_parser.nim && nim c -r tests/test_integration.nim && nim c -r tests/test_schema.nim && nim c -r tests/test_query.nim && nim c -r tests/test_migrations.nim && nim c --threads:on --mm:orc -r tests/test_router.nim && nim c --threads:on --mm:orc -r tests/test_http_integration.nim && nim c --threads:on --mm:orc -r tests/test_server_e2e.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "Lexer needed modification to support hyphenated identifiers in template mode (CSS class names, hx-* attributes). Parser string interpolation was discarding suffix text after #{expr} - fixed to store complete template string with #{} placeholders. Parser element text handling needed parsePrimaryExpr integration for interpolated strings. All procs marked gcsafe via {.push gcsafe.} and {.cast(gcsafe).} for parser calls. The renderResponse fallback ensures backward compatibility when template files are not found."
+}
