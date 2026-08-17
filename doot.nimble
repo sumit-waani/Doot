@@ -16,3 +16,4 @@ requires "nim >= 2.0.0"
 
 task test, "Run the test suite":
   exec "nim c -r tests/test_lexer.nim"
+  exec "nim c -r tests/test_parser.nim"

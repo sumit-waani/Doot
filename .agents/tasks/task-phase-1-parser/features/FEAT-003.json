@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Define all AST node types and implement the recursive-descent parser that produces a well-typed AST from the token stream. Includes expression parsing with operator precedence, all route/schema constructs, template constructs, and native blocks.",
-  "status": "pending",
+  "status": "in_progress",
   "steps": [
     "Create src/doot/ast.nim with all AST node type definitions using Nim object variants (or ref objects with inheritance). Define: AppNode (config, schema, mounts, routes/groups), ConfigNode (directives as key-value pairs), SchemaNode (tables seq, auth option), TableNode (name, fields, hasTimestamps), FieldNode (name, fieldType, constraints), AuthNode (model, roles, emailVerification), MountNode (path string).",
     "Define route/handler AST nodes: RouteNode (httpMethod, path, authOption, roleOption, handlerBody), GroupNode (authOption, roleOption, children seq of RouteNode), HandlerBodyNode (statements seq), RenderNode (templatePath, locals seq of key-value), RedirectNode (path expression), DbQueryNode (table, method, args), AssignmentNode (varName, expression), IfNode (condition, thenBranch, elseBranch), EachNode (itemVar, collection, body), NativeBlockNode (rawContent string).",
