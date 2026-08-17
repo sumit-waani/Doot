@@ -706,3 +706,125 @@ end"""
     check call.kind == nkMethodCall
     check call.callMethod == "create"
     check call.callArgs.len == 1
+
+# ------------------------------------------------------------------
+# Template #id shorthand tests
+# ------------------------------------------------------------------
+
+suite "Parser - Template #id Shorthand":
+  test "parse element with #id shorthand":
+    let source = "div#main\n"
+    let tokens = tokenize(source, mode = Template)
+    let ast = parseTemplateTokens(tokens)
+    check ast.tmplBody.len >= 1
+    let elem = ast.tmplBody[0]
+    check elem.kind == nkElement
+    check elem.elemTag == "div"
+    check elem.elemId == "main"
+
+  test "parse element with combined class and id":
+    let source = "div#sidebar.panel\n"
+    let tokens = tokenize(source, mode = Template)
+    let ast = parseTemplateTokens(tokens)
+    check ast.tmplBody.len >= 1
+    let elem = ast.tmplBody[0]
+    check elem.kind == nkElement
+    check elem.elemTag == "div"
+    check elem.elemId == "sidebar"
+    check elem.elemClasses.len == 1
+    check elem.elemClasses[0] == "panel"
+
+  test "parse element with class then id":
+    let source = "div.panel#sidebar\n"
+    let tokens = tokenize(source, mode = Template)
+    let ast = parseTemplateTokens(tokens)
+    check ast.tmplBody.len >= 1
+    let elem = ast.tmplBody[0]
+    check elem.kind == nkElement
+    check elem.elemTag == "div"
+    check elem.elemId == "sidebar"
+    check elem.elemClasses.len == 1
+    check elem.elemClasses[0] == "panel"
+
+  test "parse element with multiple classes and id":
+    let source = "div.card.dark#content\n"
+    let tokens = tokenize(source, mode = Template)
+    let ast = parseTemplateTokens(tokens)
+    check ast.tmplBody.len >= 1
+    let elem = ast.tmplBody[0]
+    check elem.kind == nkElement
+    check elem.elemTag == "div"
+    check elem.elemId == "content"
+    check elem.elemClasses.len == 2
+    check elem.elemClasses[0] == "card"
+    check elem.elemClasses[1] == "dark"
+
+# ------------------------------------------------------------------
+# Multi-line method call arguments tests
+# ------------------------------------------------------------------
+
+suite "Parser - Multi-line Method Calls":
+  test "parse method call with arguments on multiple lines":
+    let source = "route GET \"/\" do |ctx|\n  x = db.posts.create(\n    title: ctx.form[\"title\"],\n    body: ctx.form[\"body\"]\n  )\nend"
+    let tokens = tokenize(source)
+    let ast = parse(tokens)
+    let assign = ast.appRoutes[0].routeBody[0]
+    let call = assign.assignValue
+    check call.kind == nkMethodCall
+    check call.callMethod == "create"
+    check call.callArgs.len == 2
+    check call.callArgs[0].kind == nkAssignment
+    check call.callArgs[0].assignName == "title"
+    check call.callArgs[1].kind == nkAssignment
+    check call.callArgs[1].assignName == "body"
+
+  test "parse method call with newline after opening paren":
+    let source = "route GET \"/\" do |ctx|\n  x = db.posts.all(\n  )\nend"
+    let tokens = tokenize(source)
+    let ast = parse(tokens)
+    let assign = ast.appRoutes[0].routeBody[0]
+    let call = assign.assignValue
+    check call.kind == nkMethodCall
+    check call.callMethod == "all"
+    check call.callArgs.len == 0
+
+  test "parse method call with single arg on next line":
+    let source = "route GET \"/\" do |ctx|\n  x = db.posts.find(\n    ctx.params[\"id\"]\n  )\nend"
+    let tokens = tokenize(source)
+    let ast = parse(tokens)
+    let assign = ast.appRoutes[0].routeBody[0]
+    let call = assign.assignValue
+    check call.kind == nkMethodCall
+    check call.callMethod == "find"
+    check call.callArgs.len == 1
+
+# ------------------------------------------------------------------
+# Route role option with string literal tests
+# ------------------------------------------------------------------
+
+suite "Parser - Route Role String Literal":
+  test "parse route with role as string literal":
+    let source = "route GET \"/admin\", role: \"admin\" do |ctx|\n  render \"admin/index\"\nend"
+    let ast = parseSource(source)
+    let route = ast.appRoutes[0]
+    check route.routeRole == "admin"
+
+  test "parse route with role as identifier":
+    let source = "route GET \"/admin\", role: admin do |ctx|\n  render \"admin/index\"\nend"
+    let ast = parseSource(source)
+    let route = ast.appRoutes[0]
+    check route.routeRole == "admin"
+
+  test "parse group with role as string literal":
+    let source = "group auth: required, role: \"moderator\" do\n  route GET \"/mod\" do |ctx|\n    render \"mod/index\"\n  end\nend"
+    let ast = parseSource(source)
+    let group = ast.appRoutes[0]
+    check group.kind == nkGroup
+    check group.groupRole == "moderator"
+
+  test "parse route with auth and role as string literal":
+    let source = "route GET \"/admin\", auth: required, role: \"admin\" do |ctx|\n  render \"admin/index\"\nend"
+    let ast = parseSource(source)
+    let route = ast.appRoutes[0]
+    check route.routeAuth == "required"
+    check route.routeRole == "admin"

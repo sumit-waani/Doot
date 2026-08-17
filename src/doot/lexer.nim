@@ -469,6 +469,12 @@ proc scanToken(lex: var Lexer) =
       discard lex.advance()  # #
       discard lex.advance()  # {
       lex.addToken(tkInterpolStart, "#{", startLine, startCol)
+    elif lex.mode == Template and not lex.atLineStart:
+      # In template mode, # after an element tag/class is the ID shorthand marker
+      let startLine = lex.line
+      let startCol = lex.col
+      discard lex.advance()  # consume #
+      lex.addToken(tkHash, "#", startLine, startCol)
     else:
       # Comment - skip to end of line
       while not lex.isAtEnd and lex.peek != '\n':

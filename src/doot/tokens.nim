@@ -70,6 +70,7 @@ type
     tkColon       # :
     tkPipe        # |
     tkDot         # .
+    tkHash        # # (in template mode, for #id shorthand)
     tkInterpolStart  # #{
     tkInterpolEnd    # }
 

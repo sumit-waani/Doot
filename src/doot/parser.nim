@@ -253,6 +253,7 @@ proc parsePostfix*(p: var Parser, left: DootNode): DootNode =
       # Check if method call
       if p.current.kind == tkLParen:
         discard p.advance()  # consume (
+        p.skipNewlines()     # skip newlines after (
         var args: seq[DootNode] = @[]
         while p.current.kind != tkRParen and not p.atEnd:
           # Check for keyword arguments: key: value
@@ -269,6 +270,9 @@ proc parsePostfix*(p: var Parser, left: DootNode): DootNode =
             args.add(p.parseExpression())
           if p.current.kind == tkComma:
             discard p.advance()
+            p.skipNewlines()   # skip newlines after ,
+          else:
+            p.skipNewlines()   # skip newlines before )
         discard p.expect(tkRParen)
         result = newMethodCallNode(result, propName, args, left.file, left.line, left.col)
       else:
@@ -697,6 +701,9 @@ proc parseRouteOptions*(p: var Parser, route: DootNode) =
         if p.current.kind == tkIdentifier:
           route.routeRole = p.current.value
           discard p.advance()
+        elif p.current.kind == tkStringLit:
+          route.routeRole = p.current.value
+          discard p.advance()
       else:
         break
     else:
@@ -763,6 +770,9 @@ proc parseGroupOptions*(p: var Parser, group: DootNode) =
         discard p.advance()
         discard p.expect(tkColon)
         if p.current.kind == tkIdentifier:
+          group.groupRole = p.current.value
+          discard p.advance()
+        elif p.current.kind == tkStringLit:
           group.groupRole = p.current.value
           discard p.advance()
       else:
@@ -902,19 +912,25 @@ proc parseElementShorthand*(p: var Parser): DootNode =
 
   # In template mode, the lexer might have already included .class in the ident
   # Actually looking at the lexer, . is always tkDot. So:
-  # "div.card#main" would be tokenized as: tkIdentifier("div"), tkDot, tkIdentifier("card#main")
-  # or more likely as: tkIdentifier("div"), tkDot, tkIdentifier("card"), ...
-  # Since # starts a comment in route mode but in template mode it might be different.
-  # For now, handle dot-separated class names
+  # "div.card#main" would be tokenized as: tkIdentifier("div"), tkDot, tkIdentifier("card"), tkHash, tkIdentifier("main")
+  # Parse .class and #id shorthand chains
 
-  while p.current.kind == tkDot:
-    discard p.advance()  # consume .
-    if p.current.kind == tkIdentifier:
-      let className = p.current.value
-      discard p.advance()
-      result.elemClasses.add(className)
-    else:
-      break
+  while p.current.kind in {tkDot, tkHash}:
+    if p.current.kind == tkDot:
+      discard p.advance()  # consume .
+      if p.current.kind == tkIdentifier:
+        let className = p.current.value
+        discard p.advance()
+        result.elemClasses.add(className)
+      else:
+        break
+    elif p.current.kind == tkHash:
+      discard p.advance()  # consume #
+      if p.current.kind == tkIdentifier:
+        result.elemId = p.current.value
+        discard p.advance()
+      else:
+        break
 
   # Parse attributes: key=value or key="value"
   while p.current.kind == tkIdentifier and p.peek.kind == tkAssign:
