@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Child process management (supervised processes with crash restart and backoff), GitHub integration (clone/pull), env var validation, deploy pipeline (git pull + validate + compile + start), and host-header routing (reverse proxy from port 80 to internal app ports).",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create src/doot/dootd_process.nim - Child process supervisor. Types: ChildProcess object (pid, appId, appName, internalPort, process handle, status, restartCount, lastCrashTime, backoffMs). ProcessSupervisor object (children table by appId, maxRestarts=5, restartWindow=60 seconds, initialBackoffMs=1000, maxBackoffMs=30000). Functions: startChild(supervisor, appConfig, binaryPath) starts process with osproc.startProcess, captures stdout/stderr via output streams, assigns internal port via PORT env var. stopChild(supervisor, appId) sends SIGTERM, waits up to 5 seconds, then SIGKILL. restartChild(supervisor, appId) implements exponential backoff: if crashed more than maxRestarts times within restartWindow seconds, mark as error state and stop restarting. calculateBackoff(restartCount) returns min(initialBackoffMs * 2^restartCount, maxBackoffMs). checkChildren(supervisor) polls all child processes, detects exits, triggers restart logic. captureOutput(supervisor, appId, stream, line) stores log line in the dootd.db app_logs table.",
     "Create src/doot/dootd_github.nim - GitHub integration for clone and pull. Functions: cloneRepo(githubUrl, pat, branch, destDir) runs 'git clone --branch <branch> https://<pat>@github.com/user/repo.git <destDir>' using osproc.execProcess. pullRepo(pat, branch, repoDir) runs 'git pull origin <branch>' in the repo directory. Both return (success: bool, output: string). The PAT is embedded in the URL for HTTPS auth. sanitizeGitUrl(url, pat) converts 'https://github.com/user/repo' to 'https://<pat>@github.com/user/repo.git'. validateGithubUrl(url) checks URL format is a valid GitHub repo URL.",
@@ -29,5 +29,5 @@
     "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All 6 modules compile independently and as part of the main binary. 222 tests pass (up from 127). Deploy pipeline handles local git repos gracefully - if pull fails but .do files exist in the directory, it proceeds with current code (useful for local development and testing). The extractEnvReferences function requires env( to not be preceded by a word character to avoid false matches with environment( or myenv(. cgroups functions are all no-ops in the sandbox (cgroupsAvailable returns false). The strtabs module is needed in dootd_process.nim for newStringTable in process environment."
 }
