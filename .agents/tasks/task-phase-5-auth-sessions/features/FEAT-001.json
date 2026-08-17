@@ -2,7 +2,7 @@
   "id": "FEAT-001",
   "type": "feat",
   "description": "Implement crypto primitives: HMAC-SHA256 cookie signing (via OpenSSL C FFI) and argon2id password hashing (via libargon2 C FFI). These are the foundational building blocks for session security and password storage.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create src/doot/crypto.nim with C FFI bindings to OpenSSL's HMAC functions (HMAC, EVP_sha256) and libargon2 (argon2id_hash_encoded, argon2id_verify). Use {.header: \"openssl/hmac.h\".} and {.header: \"argon2.h\".} with passL for linking.",
     "Implement proc hmacSign*(key: string, data: string): string that produces a hex-encoded HMAC-SHA256 signature.",
@@ -26,5 +26,5 @@
     "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_auth.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All 36 crypto tests pass. OpenSSL HMAC uses EVP_sha256 via C FFI. Argon2id uses libargon2 directly. Linking requires --passL:-largon2 --passL:-lssl --passL:-lcrypto. The argon2_encodedlen function is used to dynamically determine buffer size. Cookie format is 'sessionId.hexSignature' using rfind('.') for parsing to handle session IDs that might contain dots. Existing test suites (router, parser) continue to pass without regressions."
 }
