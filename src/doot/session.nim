@@ -120,3 +120,7 @@ proc deleteSessionValue*(session: var SessionData, key: string) =
   ## Remove a value from the session data.
   if session.data.hasKey(key):
     session.data.del(key)
+
+proc cleanupExpiredSessions*(store: SessionStore) =
+  ## Delete all sessions that have expired (expires_at < current time).
+  store.db.exec(sql"DELETE FROM _sessions WHERE expires_at < datetime('now')")
