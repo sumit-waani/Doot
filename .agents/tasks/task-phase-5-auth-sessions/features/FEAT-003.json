@@ -1,0 +1,29 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Auth schema block codegen and email verification stub. Generate users table DDL from the parsed auth AST node, integrate with the DDL generation pipeline, ensure the auth block in app.do properly generates the users table schema. Add email verification scaffolding (mark unverified on signup, stub enqueue for verification email). Update nimble test task to include test_auth.nim.",
+  "status": "in_progress",
+  "steps": [
+    "Update src/doot/ddl.nim: add proc generateAuthDDL*(auth: DootNode): string that generates the users table CREATE TABLE statement based on the nkAuth AST node fields (roles determines if role column is included, emailVerification determines if email_verified column is included).",
+    "Update src/doot/ddl.nim: update generateAllDDL to also generate auth DDL if schema.schemaAuth is not nil.",
+    "In src/doot/auth.nim, add email verification support: when AuthConfig.emailVerification is true, on signup set email_verified=0. Add proc generateVerificationToken*(userId: int64, secret: string): string that creates a signed token. Add proc verifyEmailToken*(token: string, secret: string): int64 that validates and returns userId (or 0 if invalid).",
+    "Add an auth integration test to tests/test_auth.nim: parse an auth block AST node, generate DDL, verify it includes the correct columns (email, password_hash, role if roles configured, email_verified if email_verification true, timestamps).",
+    "Add email verification tests: test token generation and verification, test that signup with email_verification=true creates user with email_verified=0.",
+    "Update doot.nimble task test section: add the line to compile and run tests/test_auth.nim with --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto flags."
+  ],
+  "acceptance_criteria": [
+    "generateAuthDDL produces correct CREATE TABLE users statement with id, email, password_hash, role (if roles configured), email_verified (if configured), created_at, updated_at",
+    "generateAllDDL includes auth DDL when schemaAuth is present",
+    "Email verification token can be generated and verified (round-trip)",
+    "Signup with email_verification creates user with email_verified=0",
+    "nimble test includes test_auth.nim and all tests pass",
+    "All existing 469 tests continue to pass (no regressions)"
+  ],
+  "verification": [
+    "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_auth.nim",
+    "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c -r tests/test_schema.nim",
+    "export PATH=\"/root/.nimble/bin:$PATH\" && cd /projects/sandbox/Doot && nim c -r tests/test_parser.nim"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

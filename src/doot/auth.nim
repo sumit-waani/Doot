@@ -209,6 +209,34 @@ proc clearSessionCookieHeader*(): string =
   "doot_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
 
 # =============================================================================
+# Email Verification
+# =============================================================================
+
+proc generateVerificationToken*(userId: int64, secret: string): string =
+  ## Generate a signed email verification token for the given userId.
+  ## Format: userId.hmacSignature (base10 userId, hex HMAC-SHA256).
+  let data = $userId
+  let sig = hmacSign(secret, data)
+  return data & "." & sig
+
+proc verifyEmailToken*(token: string, secret: string): int64 =
+  ## Verify an email verification token and return the userId.
+  ## Returns 0 if the token is invalid or tampered.
+  if token.len == 0:
+    return 0
+  let dotIdx = token.rfind('.')
+  if dotIdx <= 0 or dotIdx >= token.len - 1:
+    return 0
+  let data = token[0 ..< dotIdx]
+  let sig = token[dotIdx + 1 .. ^1]
+  if not hmacVerify(secret, data, sig):
+    return 0
+  try:
+    result = parseBiggestInt(data).int64
+  except ValueError:
+    result = 0
+
+# =============================================================================
 # Built-in route handlers
 # =============================================================================
 

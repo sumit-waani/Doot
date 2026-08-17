@@ -942,3 +942,168 @@ suite "E2E Auth - ctx.currentUser Population":
     check resp.body == "anonymous"
     client.close()
 
+# =============================================================================
+# Auth DDL Generation Tests (FEAT-003)
+# =============================================================================
+
+import ../src/doot/ast
+import ../src/doot/ddl
+
+suite "Auth DDL Generation":
+  test "generateAuthDDL with roles and email_verification produces all columns":
+    let auth = newAuthNode("users")
+    auth.authRoles = @["admin", "user"]
+    auth.emailVerification = true
+    let ddl = generateAuthDDL(auth)
+    check "CREATE TABLE users" in ddl
+    check "id INTEGER PRIMARY KEY AUTOINCREMENT" in ddl
+    check "email TEXT NOT NULL UNIQUE" in ddl
+    check "password_hash TEXT NOT NULL" in ddl
+    check "role TEXT DEFAULT ''" in ddl
+    check "email_verified INTEGER DEFAULT 0" in ddl
+    check "created_at TEXT NOT NULL DEFAULT (datetime('now'))" in ddl
+    check "updated_at TEXT NOT NULL DEFAULT (datetime('now'))" in ddl
+
+  test "generateAuthDDL without roles omits role column":
+    let auth = newAuthNode("users")
+    auth.authRoles = @[]
+    auth.emailVerification = true
+    let ddl = generateAuthDDL(auth)
+    check "role TEXT" notin ddl
+    check "email_verified INTEGER DEFAULT 0" in ddl
+
+  test "generateAuthDDL without email_verification omits email_verified column":
+    let auth = newAuthNode("users")
+    auth.authRoles = @["admin"]
+    auth.emailVerification = false
+    let ddl = generateAuthDDL(auth)
+    check "role TEXT DEFAULT ''" in ddl
+    check "email_verified" notin ddl
+
+  test "generateAuthDDL with no roles and no email_verification produces minimal columns":
+    let auth = newAuthNode("users")
+    auth.authRoles = @[]
+    auth.emailVerification = false
+    let ddl = generateAuthDDL(auth)
+    check "CREATE TABLE users" in ddl
+    check "id INTEGER PRIMARY KEY AUTOINCREMENT" in ddl
+    check "email TEXT NOT NULL UNIQUE" in ddl
+    check "password_hash TEXT NOT NULL" in ddl
+    check "created_at TEXT NOT NULL DEFAULT (datetime('now'))" in ddl
+    check "updated_at TEXT NOT NULL DEFAULT (datetime('now'))" in ddl
+    check "role" notin ddl
+    check "email_verified" notin ddl
+
+  test "generateAuthDDL uses custom model name as table name":
+    let auth = newAuthNode("accounts")
+    auth.authRoles = @["editor"]
+    auth.emailVerification = false
+    let ddl = generateAuthDDL(auth)
+    check "CREATE TABLE accounts" in ddl
+    check "CREATE TABLE users" notin ddl
+
+  test "generateAllDDL includes auth DDL when schemaAuth is present":
+    let schema = newSchemaNode()
+    let table = newTableNode("posts")
+    table.hasTimestamps = true
+    let field = newFieldNode("title", "string")
+    table.tableFields.add(field)
+    schema.schemaTables.add(table)
+    let auth = newAuthNode("users")
+    auth.authRoles = @["admin"]
+    auth.emailVerification = true
+    schema.schemaAuth = auth
+    let allDDL = generateAllDDL(schema)
+    check allDDL.len == 2
+    check "CREATE TABLE posts" in allDDL[0]
+    check "CREATE TABLE users" in allDDL[1]
+    check "role TEXT DEFAULT ''" in allDDL[1]
+    check "email_verified INTEGER DEFAULT 0" in allDDL[1]
+
+  test "generateAllDDL without auth does not include auth DDL":
+    let schema = newSchemaNode()
+    let table = newTableNode("posts")
+    table.hasTimestamps = false
+    schema.schemaTables.add(table)
+    schema.schemaAuth = nil
+    let allDDL = generateAllDDL(schema)
+    check allDDL.len == 1
+    check "CREATE TABLE posts" in allDDL[0]
+
+# =============================================================================
+# Email Verification Token Tests (FEAT-003)
+# =============================================================================
+
+suite "Email Verification Tokens":
+  test "generateVerificationToken produces userId.signature format":
+    let token = generateVerificationToken(42, "secret-key")
+    check '.' in token
+    let parts = token.split('.')
+    check parts.len == 2
+    check parts[0] == "42"
+    check parts[1].len == 64  # hex HMAC-SHA256
+
+  test "generateVerificationToken is deterministic for same inputs":
+    let t1 = generateVerificationToken(100, "key")
+    let t2 = generateVerificationToken(100, "key")
+    check t1 == t2
+
+  test "generateVerificationToken produces different tokens for different users":
+    let t1 = generateVerificationToken(1, "key")
+    let t2 = generateVerificationToken(2, "key")
+    check t1 != t2
+
+  test "generateVerificationToken produces different tokens for different secrets":
+    let t1 = generateVerificationToken(1, "secret1")
+    let t2 = generateVerificationToken(1, "secret2")
+    check t1 != t2
+
+  test "verifyEmailToken round-trips correctly":
+    let secret = "verification-secret"
+    let token = generateVerificationToken(123, secret)
+    let userId = verifyEmailToken(token, secret)
+    check userId == 123
+
+  test "verifyEmailToken returns 0 for tampered token":
+    let secret = "my-secret"
+    let token = generateVerificationToken(42, secret)
+    # Tamper with the userId part
+    let tampered = "99" & token[token.find('.')..^1]
+    check verifyEmailToken(tampered, secret) == 0
+
+  test "verifyEmailToken returns 0 for tampered signature":
+    let secret = "my-secret"
+    let token = generateVerificationToken(42, secret)
+    let tampered = token[0..^2] & (if token[^1] == 'a': "b" else: "a")
+    check verifyEmailToken(tampered, secret) == 0
+
+  test "verifyEmailToken returns 0 for wrong secret":
+    let token = generateVerificationToken(42, "secret1")
+    check verifyEmailToken(token, "secret2") == 0
+
+  test "verifyEmailToken returns 0 for empty token":
+    check verifyEmailToken("", "secret") == 0
+
+  test "verifyEmailToken returns 0 for missing dot":
+    check verifyEmailToken("nodothere", "secret") == 0
+
+  test "verifyEmailToken returns 0 for non-numeric userId":
+    let secret = "key"
+    # Manually craft a token with non-numeric userId
+    let sig = hmacSign(secret, "notanumber")
+    let token = "notanumber." & sig
+    check verifyEmailToken(token, secret) == 0
+
+  test "verifyEmailToken handles large user IDs":
+    let secret = "key"
+    let largeId: int64 = 9223372036854775807  # max int64
+    let token = generateVerificationToken(largeId, secret)
+    check verifyEmailToken(token, secret) == largeId
+
+  test "signup with email_verification creates user with email_verified=0":
+    let (db, store, config) = setupAuthTestDb()
+    let result = createUser(db, "verify@example.com", "password123")
+    check result.ok == true
+    check result.record.getInt("email_verified") == 0
+    db.close()
+
