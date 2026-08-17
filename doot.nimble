@@ -22,3 +22,4 @@ task test, "Run the test suite":
   exec "nim c -r tests/test_integration.nim"
   exec "nim c -r tests/test_schema.nim"
   exec "nim c -r tests/test_query.nim"
+  exec "nim c -r tests/test_migrations.nim"
