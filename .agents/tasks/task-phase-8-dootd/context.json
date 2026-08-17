@@ -1,0 +1,33 @@
+{
+  "project_type": "Nim DSL compiler and web framework (Doot) - Phase 8: Production Daemon",
+  "language": "Nim 2.2.10",
+  "build_system": "nimble with nim.cfg (--threads:on --mm:orc, db_connector path). Binary target named 'doot'. Linking flags for crypto: --passL:-largon2 --passL:-lssl --passL:-lcrypto",
+  "test_framework": "Nim stdlib unittest module. Test files in tests/ directory named test_*.nim. Each compiled separately with nim c -r. Tests requiring crypto/threads use flags: --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto",
+  "build_command": "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim",
+  "test_command": "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_dootd.nim",
+  "verification_instructions": "1. Compile src/doot.nim successfully. 2. Run tests/test_dootd.nim and confirm all tests pass. 3. Verify that the test covers: password generation/hashing, dashboard auth, app config CRUD, env var validation, host-header routing, process supervision logic, idempotent re-runs, systemd service file generation, deploy flow, and dashboard HTML rendering.",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "export PATH=/root/.nimble/bin:$PATH - Nim 2.2.10 is installed via choosenim at /root/.nimble/bin. Libraries: libargon2.so, libssl.so available at /lib64/.",
+  "environment_constraints": "Nim available at /root/.nimble/bin. No Docker. OPEN_INTERNET network. No systemd available in sandbox (cannot register services). No cgroups v2 available (cannot create cgroups). No root access for port 80. Tests must verify logic without requiring root, systemd, or cgroups - mock/stub system-level operations. Use non-privileged ports (8080, 9001, etc.) in tests.",
+  "contribution_requirements": "Follow existing code patterns. Comprehensive unit tests. Phase exit criteria must all pass. Modules are single .nim files in src/doot/. Tests use unittest suites.",
+  "key_patterns": "Each module is a single .nim file in src/doot/. Types defined at top, procs below. Tests use unittest suites. Exported procs marked with *. Modules import from same directory using ./ prefix (e.g., import ./crypto). Parser uses parseWithErrors. Auth uses argon2id via crypto.nim (hashPassword, verifyPassword). Server uses std/asynchttpserver + std/asyncdispatch. Sessions use SQLite-backed store. Response helpers in response.nim. Router pattern matching in router.nim.",
+  "relevant_files": [
+    "src/doot.nim",
+    "src/doot/cli.nim",
+    "src/doot/crypto.nim",
+    "src/doot/auth.nim",
+    "src/doot/session.nim",
+    "src/doot/server.nim",
+    "src/doot/router.nim",
+    "src/doot/response.nim",
+    "src/doot/db_types.nim",
+    "src/doot/jobs.nim",
+    "src/doot/error_format.nim",
+    "doot.nimble",
+    "nim.cfg",
+    "docs/dootd.md",
+    "tests/test_cli.nim",
+    "tests/test_auth.nim"
+  ],
+  "directory_structure": "src/doot.nim is the main entry point (binary). src/doot/ contains all modules. tests/ contains test files. examples/blog/ is the reference project. docs/ has specs. .agents/tasks/ has task state."
+}

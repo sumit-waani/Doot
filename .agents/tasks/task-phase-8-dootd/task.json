@@ -1,0 +1,14 @@
+{
+  "task_id": "task-phase-8-dootd",
+  "task_description": "Implement Phase 8: dootd (Production Daemon) for the Doot DSL compiler. This phase implements production mode (doot --prod) with a web dashboard, app management, GitHub integration, env var validation, child process supervision, host-header routing, cgroups isolation, systemd registration, and password management.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null,
+  "verification": {
+    "build": "pass",
+    "tests": "pass",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "nim c src/doot.nim compiles successfully (90584 lines). 236 tests in test_dootd.nim all pass. 82 tests in test_cli.nim all pass (no regression). Tests exercise real code paths: auth, CRUD, deploy pipeline, env validation, routing, backoff logic, HTML rendering. No Docker available in sandbox."
+  }
+}
