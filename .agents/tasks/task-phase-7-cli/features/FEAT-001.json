@@ -2,7 +2,7 @@
   "id": "FEAT-001",
   "type": "feat",
   "description": "Implement the CLI module (src/doot/cli.nim) with argument parsing and command dispatch, the scaffolding module (src/doot/scaffold.nim) for 'doot new <name>', the help module, and the file watcher (src/doot/watcher.nim) with poll-based file monitoring. Update src/doot.nim to be the CLI dispatcher entry point. Write comprehensive tests in tests/test_cli.nim.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create src/doot/cli.nim - CLI argument parser and command dispatcher. Parse argv into (command, args) tuples. Supported commands: 'new', 'dev', 'help', '--prod'. On invalid command or no args, show help. Return exit code 0 on success, 1 on compile error, 2 on invalid command.",
     "Create src/doot/scaffold.nim - Project scaffolding for 'doot new <name>'. Validate name: alphanumeric + hyphens only, no spaces, no leading/trailing hyphens, not empty. Create directory structure: app.do (minimal config+schema), views/layouts/base.do (base layout), static/app.css (starter stylesheet), migrations/ (empty dir), .env (with SESSION_SECRET=<generated-random-hex>), .env.example (template showing required vars), .gitignore (ignoring .env, .doot-build/, uploads/, *.db). Generate a random session secret (32-byte hex string using std/sysrand). Print next-steps welcome message after scaffolding.",
@@ -32,5 +32,5 @@
     "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c -r tests/test_cli.nim"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All 67 tests pass. Build compiles cleanly. The doot binary now dispatches CLI commands. Project name validation rejects underscores (spec says alphanumeric+hyphens only). The dev_server module is structured to handle the full parse-schema-diff cycle but does not yet compile/run a generated Nim server since codegen pipeline is not yet implemented end-to-end. SIGINT handling uses a module-level pointer variable since Nim noconv procs cannot capture local variables."
 }
