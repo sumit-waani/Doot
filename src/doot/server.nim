@@ -1,6 +1,14 @@
 ## Main HTTP server module for the Doot runtime.
 ## Ties together routing, context, static files, HTMX, CORS, sessions,
 ## and error handling using std/asynchttpserver + std/asyncdispatch.
+##
+## NOTE: SESSION COOKIE INTEGRATION IS NOT WIRED IN PHASE 3.
+## The session store (session.nim) provides full CRUD for SQLite-backed
+## sessions, but this server module does not read session IDs from incoming
+## request cookies (Cookie header) or write Set-Cookie headers on outgoing
+## responses. Session integration wiring (cookie read/write, session
+## hydration into DootCtx, Set-Cookie on new sessions) is implemented in
+## Phase 5 alongside authentication enforcement.
 
 import std/[asynchttpserver, asyncdispatch, tables, strutils, uri]
 import ./router
@@ -117,8 +125,13 @@ proc handleRequest*(server: DootServer, req: Request) {.async.} =
 
   # Check authentication (stub: check if route requires auth)
   if routeMatch.route.authRequired:
-    # In Phase 3, auth is a stub. Check if there's a session cookie.
-    # For now, routes marked auth: required will be accessible but flagged.
+    # NOTE: AUTH ENFORCEMENT IS INTENTIONALLY A NO-OP IN PHASE 3.
+    # Routes marked `auth: required` (the default) are accessible without
+    # any session or credential check. Real authentication enforcement is
+    # implemented in Phase 5, which adds session cookie validation, login
+    # flow, and 401 responses for unauthenticated requests.
+    # Until then, all routes are effectively public regardless of their
+    # auth annotation.
     discard
 
   # Build context and execute handler

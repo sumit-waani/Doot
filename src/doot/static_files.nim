@@ -45,9 +45,15 @@ proc serveStaticFile*(basePath: string, requestPath: string,
   ## Returns a DootResponse with proper content-type and cache headers.
   ## Returns a 404 response if file not found.
 
-  # Security: prevent path traversal
-  let normalized = requestPath.replace("..", "")
-  let filePath = basePath / normalized.strip(chars = {'/'})
+  # Security: prevent path traversal by resolving the absolute path
+  # and verifying it remains within the static root directory.
+  let staticRoot = absolutePath(basePath)
+  let candidate = absolutePath(basePath / requestPath.strip(chars = {'/'}))
+  # Normalize both paths to remove any .. segments via absolutePath,
+  # then verify the resolved candidate starts with the static root.
+  if not candidate.startsWith(staticRoot):
+    return errorResponse(404, "File not found")
+  let filePath = candidate
 
   if not fileExists(filePath):
     return errorResponse(404, "File not found")

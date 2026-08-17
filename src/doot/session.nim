@@ -2,7 +2,7 @@
 ## SQLite-backed sessions with JSON data storage.
 ## Cookie signing is a stub in Phase 3 (Phase 5 adds HMAC).
 
-import std/[tables, strutils, json, times, random]
+import std/[tables, strutils, json, times, sysrand]
 import db_connector/db_sqlite
 
 type
@@ -27,11 +27,17 @@ const SessionTableSQL* = """
 """
 
 proc generateSessionId*(): string =
-  ## Generate a random hex session ID (32 chars).
-  var r = initRand()
+  ## Generate a cryptographically secure random hex session ID (32 chars).
+  ## Uses std/sysrand (backed by /dev/urandom on Linux) to prevent
+  ## predictable session IDs from clock-based seeding.
+  var bytes: array[16, byte]
+  if not urandom(bytes):
+    # Fallback should never happen on Linux, but raise rather than
+    # produce a weak ID if the OS entropy source is unavailable.
+    raise newException(OSError, "Failed to read from system random source")
   result = ""
-  for i in 0..<16:
-    result.add(toHex(r.rand(255).uint8, 2).toLowerAscii())
+  for b in bytes:
+    result.add(toHex(b, 2).toLowerAscii())
 
 proc newSessionStore*(db: DbConn): SessionStore =
   ## Create a new session store backed by the given SQLite connection.

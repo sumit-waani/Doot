@@ -105,3 +105,10 @@ proc populateFromRequest*(ctx: DootCtx, meth: string, path: string,
   if meth in ["POST", "PUT", "PATCH"] and
      "application/x-www-form-urlencoded" in contentType:
     ctx.form = parseFormBody(body)
+
+  # NOTE: MULTIPART FORM PARSING IS NOT YET IMPLEMENTED.
+  # The `ctx.file` table (Table[string, UploadedFile]) exists in the type
+  # definition but is never populated. Requests with Content-Type
+  # multipart/form-data will result in an empty `file` table and any
+  # form fields within the multipart body will not appear in `ctx.form`.
+  # Multipart parsing (file uploads) is planned for Phase 4/5.
