@@ -2,6 +2,10 @@
 ## Provides HMAC-SHA256 cookie signing via OpenSSL C FFI
 ## and argon2id password hashing via libargon2 C FFI.
 
+{.passL: "-largon2".}
+{.passL: "-lssl".}
+{.passL: "-lcrypto".}
+
 import std/[strutils, sysrand]
 
 # =============================================================================

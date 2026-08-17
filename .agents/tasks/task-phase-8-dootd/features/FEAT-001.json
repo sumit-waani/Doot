@@ -1,0 +1,29 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Core daemon infrastructure: dootd state management, password generation, systemd service file generation, idempotent re-runs, and the --prod mode switch implementation. This feature builds the foundation that all other Phase 8 features depend on.",
+  "status": "completed",
+  "steps": [
+    "Create src/doot/dootd_types.nim - Define core types: DootdConfig (data_dir, dashboard_port, router_port, etc.), AppConfig (name, hostname, github_url, pat, branch, env_vars, internal_port, memory_limit, cpu_shares, status), AppStatus enum (asRunning, asStopped, asError, asDeploying), DootdState (config, apps list, password_hash, initialized flag). Also define constants for default ports, data directories, internal port range start (3001).",
+    "Create src/doot/dootd_state.nim - Implement state persistence using SQLite (similar to session.nim pattern). Functions: initDootdDb(dataDir) creates/opens SQLite db with tables for config (key-value), apps (all AppConfig fields), and app_logs (app_id, timestamp, stream stdout/stderr, message). Functions: loadState(db), saveAppConfig(db, app), deleteApp(db, appId), getApps(db), getConfig(db, key), setConfig(db, key, value). The state file lives at dataDir/dootd.db. dataDir defaults to /var/lib/dootd or ~/.dootd in non-root mode.",
+    "Create src/doot/dootd_password.nim - Implement password generation and management. Functions: generateAdminPassword() returns a string like 'k3x9-p2mN-q8vL' (16 chars, groups of 4 separated by hyphens, using alphanumeric chars from sysrand). hashAndStorePassword(db, plaintext) hashes with argon2id (reuse crypto.hashPassword) and stores in config table. verifyAdminPassword(db, plaintext) loads hash from config, uses crypto.verifyPassword. isPasswordSet(db) checks if config has 'admin_password_hash' key. resetPassword(db) generates new password, hashes and stores it, returns plaintext.",
+    "Create src/doot/dootd_systemd.nim - Generate systemd service file content. Function: generateServiceFile(binaryPath, dataDir) returns the string content of a systemd unit file with [Unit] Description=Doot Production Daemon, After=network.target; [Service] Type=simple, ExecStart=binaryPath --prod, Restart=always, RestartSec=5, WorkingDirectory=dataDir, Environment=PATH=/usr/bin:/bin; [Install] WantedBy=multi-user.target. Function: serviceFilePath() returns '/etc/systemd/system/dootd.service'. Function: installService(binaryPath, dataDir) writes the file and runs systemctl daemon-reload + enable + start (wrap in try/except for sandbox where systemd is unavailable). Function: isServiceInstalled() checks if the service file exists.",
+    "Update src/doot/cli.nim - Add '--reset-password' flag parsing. In parseArgs, when command is cmdProd, check if flags contain '--reset-password' and store that info. Add a new CliCommand variant or use the flags field. Implement runProd(flags) function that: (1) determines dataDir, (2) calls initDootdDb, (3) checks if already initialized via isPasswordSet, (4) if not initialized: generate password, display it, generate systemd service file (try to install, catch errors gracefully), mark as initialized, then start the dashboard, (5) if already initialized: print status message with dashboard URL and hint about --reset-password, (6) if --reset-password flag: call resetPassword and display new password. Wire cmdProd in dispatch() to call runProd.",
+    "Create tests/test_dootd.nim - Write comprehensive tests for this feature: test password generation format (groups of 4, hyphens, correct length), test password hashing and verification round-trip, test state persistence (init db, save app, load apps, delete app), test systemd service file content (contains correct paths, has required sections), test idempotent re-runs (second init does not wipe state), test reset-password generates new password that verifies correctly. Use a temp directory for test databases. Import and test dootd_types, dootd_state, dootd_password, dootd_systemd modules."
+  ],
+  "acceptance_criteria": [
+    "src/doot/dootd_types.nim compiles and exports all required types",
+    "src/doot/dootd_state.nim creates SQLite database with correct schema and performs CRUD on apps and config",
+    "src/doot/dootd_password.nim generates cryptographically random passwords in the correct format and hashes/verifies them using argon2id",
+    "src/doot/dootd_systemd.nim generates a valid systemd service file with correct content",
+    "cli.nim dispatches --prod to runProd and handles --reset-password flag",
+    "Running dootd state init twice does not wipe existing data (idempotent)",
+    "tests/test_dootd.nim passes with all test cases green"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_dootd.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "Added passL flags (argon2, ssl, crypto) to nim.cfg globally since the main binary now imports crypto.nim transitively through dootd_password. All 55 tests pass. Existing test_cli.nim still passes with the nim.cfg change. The insertID proc in db_sqlite requires the SQL query as parameter (not a separate call). getDataDir needed module qualification due to name collision with std/private/osappdirs."
+}

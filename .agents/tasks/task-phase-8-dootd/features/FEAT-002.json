@@ -1,0 +1,34 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Dashboard web UI with authentication, app CRUD, deploy trigger, log viewing, server stats, and settings pages. Server-rendered HTML (not a SPA). The dashboard runs on port 8080 and requires admin password authentication.",
+  "status": "completed",
+  "steps": [
+    "Create src/doot/dootd_dashboard.nim - Implement the dashboard HTTP server using std/asynchttpserver (same pattern as server.nim). Define DootdDashboard object with fields: port (default 8080), db (DbConn for dootd.db), sessionSecret (generated on init), running flag. Functions: newDootdDashboard(db, port), startDashboard(dashboard) starts async HTTP server, handleDashboardRequest(dashboard, req) routes requests. Use a simple cookie-based session (reuse session.nim pattern) for auth. Routes: GET /login (show login form), POST /login (verify password, create session, redirect), GET / (app list - requires auth), GET /apps/new (create app form), POST /apps (create app), GET /apps/:id (app detail), POST /apps/:id/deploy (trigger deploy), GET /apps/:id/logs (view logs), GET /apps/:id/edit (edit app), POST /apps/:id/update (update app), POST /apps/:id/delete (delete app), GET /stats (server stats), GET /settings (settings page), POST /settings/password (change password), POST /logout (destroy session).",
+    "Create src/doot/dootd_html.nim - Server-rendered HTML templates as Nim string procs (simple HTML generation, no SPA). Functions: renderLayout(title, bodyContent, isLoggedIn) wraps content in a basic HTML shell with nav bar and minimal CSS. renderLoginPage(error) login form. renderAppList(apps) table of apps with status indicators and deploy buttons. renderAppForm(app=nil) form for creating/editing an app (fields: name, hostname, github_url, pat, branch, env vars textarea, memory_limit, cpu_shares). renderAppDetail(app, recentLogs) app info with deploy button, status, recent log lines. renderLogsPage(appName, logs, filter) log viewer with basic search/filter. renderStatsPage(stats) server metrics display (CPU%, mem used/total, disk used/total, per-app memory). renderSettingsPage(message) settings form with password change. Each function returns a string of HTML. Use inline CSS (a single embedded stylesheet in the layout) for a clean, functional look.",
+    "Implement dashboard authentication in dootd_dashboard.nim - On POST /login: read form fields (password), call verifyAdminPassword from dootd_password.nim. If valid, create a session cookie (generate random token, store in SQLite sessions table, set HttpOnly cookie). On every authenticated route: check for session cookie, validate it exists in DB and is not expired. If not authenticated, redirect to /login. On POST /logout: delete session from DB, clear cookie.",
+    "Implement app CRUD in dootd_dashboard.nim - POST /apps: parse form (name, hostname, github_url, pat, branch, env_vars as newline-separated KEY=VALUE pairs, memory_limit_mb, cpu_shares), validate required fields, assign next available internal port (starting from 3001, find max port in existing apps +1), save to dootd.db via dootd_state.saveAppConfig, redirect to app list. GET /apps/:id: load app from db, render detail page. POST /apps/:id/update: update app config. POST /apps/:id/delete: delete app (stop process if running), remove from db.",
+    "Implement log viewing in dootd_dashboard.nim - GET /apps/:id/logs: load recent log entries from app_logs table (last 200 lines by default). Support query param ?search=term to filter logs containing the search term. Render with renderLogsPage. Log entries are stored when child processes write to stdout/stderr (that integration comes in FEAT-003, but the viewing UI is built here).",
+    "Implement stats page in dootd_dashboard.nim - GET /stats: collect basic system metrics. Create src/doot/dootd_stats.nim with functions: getCpuUsage() reads /proc/stat (Linux), getMemoryInfo() reads /proc/meminfo, getDiskInfo() uses statvfs or reads /proc/mounts + statfs. Returns simple objects (CpuStats, MemStats, DiskStats). For per-app stats, read from cgroup files if available or use /proc/<pid>/status. If /proc is not available (non-Linux), return placeholder values. Render with renderStatsPage.",
+    "Implement settings page in dootd_dashboard.nim - GET /settings: show form with current password and new password fields. POST /settings/password: verify current password, hash new password, update in config table. Show success/error message.",
+    "Add dashboard tests to tests/test_dootd.nim - Test: login with correct password succeeds, login with wrong password fails, unauthenticated access redirects to login, app creation via form data produces correct DB entry, app list renders HTML with app names, app deletion removes from DB, stats page renders without errors, settings password change updates the stored hash, log viewing returns stored log entries, HTML rendering functions produce valid HTML structure (contain expected tags/content)."
+  ],
+  "acceptance_criteria": [
+    "Dashboard HTTP server starts on configured port and serves HTML pages",
+    "Login form authenticates against stored admin password hash",
+    "Authenticated session persists via cookie until logout or expiry",
+    "App CRUD operations work: create, read, update, delete apps in SQLite",
+    "App list page shows all configured apps with their status",
+    "Logs page displays stored log entries with search filtering",
+    "Stats page shows system metrics (or graceful fallback on non-Linux)",
+    "Settings page allows password change",
+    "All HTML is server-rendered (no JS frameworks, no SPA)",
+    "All new tests in test_dootd.nim pass"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_dootd.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "All 127 tests pass (55 pre-existing + 72 new). No compilation warnings. The dashboard uses a simplified session model (SQLite table dootd_sessions) separate from the main app session.nim to avoid coupling. Request objects are constructed directly in tests (no network binding needed). Stats collection degrades gracefully - /proc/stat and /proc/meminfo are readable in the sandbox. The crypto import was removed from dootd_dashboard.nim since password hashing goes through dootd_password.nim which already imports crypto."
+}

@@ -1,8 +1,11 @@
 ## CLI argument parser and command dispatcher.
 ## Parses command-line arguments and dispatches to the appropriate handler.
 
-import std/os
+import std/[os, asyncdispatch, tables]
+import db_connector/db_sqlite
 import scaffold, dev_server, error_format
+import dootd_types, dootd_state, dootd_password, dootd_systemd
+import dootd_dashboard, dootd_router, dootd_process
 
 type
   CliCommand* = enum
@@ -153,6 +156,128 @@ proc runDev*(args: seq[string]): int =
   gDevServer = nil
   return 0
 
+## gProdSupervisor and gProdDashboard hold pointers for signal handling.
+var gProdSupervisor: ptr ProcessSupervisor = nil
+var gProdDashboard: ptr DootdDashboard = nil
+
+proc handleProdSigint() {.noconv.} =
+  ## SIGINT/SIGTERM handler for graceful shutdown of production daemon.
+  echo ""
+  echo "Shutting down dootd..."
+  if gProdSupervisor != nil:
+    # Stop all child processes
+    var appIds: seq[int64] = @[]
+    for appId, child in gProdSupervisor[].children.pairs:
+      appIds.add(appId)
+    for appId in appIds:
+      discard stopChild(gProdSupervisor[], appId)
+  if gProdDashboard != nil:
+    gProdDashboard[].running = false
+  echo "All children stopped. Goodbye."
+  quit(0)
+
+proc initDaemonState*(db: DbConn): tuple[dashboard: DootdDashboard, router: HostRouter, supervisor: ProcessSupervisor] =
+  ## Initialize the daemon state: dashboard, router, and supervisor.
+  ## Loads existing apps from DB, registers routes, and prepares to start children.
+  ## This proc is testable without entering the event loop.
+  initDashboardSessions(db)
+
+  let state = loadState(db)
+  let dashboardPort = state.config.dashboardPort
+  let routerPort = state.config.routerPort
+
+  var dashboard = newDootdDashboard(db, dashboardPort)
+  var router = newHostRouter(routerPort = routerPort, dashboardPort = dashboardPort)
+  var supervisor = newProcessSupervisor()
+
+  # Load existing apps and register routes
+  for app in state.apps:
+    if app.hostname.len > 0:
+      router.addRoute(app.hostname, app.internalPort, app.id)
+
+  result = (dashboard: dashboard, router: router, supervisor: supervisor)
+
+proc runProd*(flags: seq[string]): int =
+  ## Execute the 'doot --prod' command.
+  ## Initializes the daemon on first run, shows status on subsequent runs.
+  ## Handles --reset-password flag for password recovery.
+  ## Starts the dashboard and router servers.
+  let dataDir = dootd_state.getDataDir()
+  let db = initDootdDb(dataDir)
+
+  let resetPwd = "--reset-password" in flags
+  let statusOnly = "--status" in flags
+
+  if resetPwd:
+    let newPwd = resetPassword(db)
+    echo "Admin password has been reset."
+    echo ""
+    echo "New admin password: " & newPwd
+    echo ""
+    echo "Store this password securely. It will not be shown again."
+    db.close()
+    return 0
+
+  let alreadyInitialized = isPasswordSet(db)
+
+  if not alreadyInitialized:
+    # First run: generate password and set up
+    let password = generateAdminPassword()
+    hashAndStorePassword(db, password)
+
+    # Store config
+    let binPath = getAppFilename()
+    setConfig(db, "data_dir", dataDir)
+    setConfig(db, "binary_path", binPath)
+    setConfig(db, "dashboard_port", $DefaultDashboardPort)
+    setConfig(db, "router_port", $DefaultRouterPort)
+
+    echo "  Dashboard ready at http://localhost:" & $DefaultDashboardPort
+    echo "  Username: admin"
+    echo "  Password: " & password & "   (save this - shown only once; change it from dashboard settings)"
+
+    # Try to install systemd service (will fail gracefully in sandboxes)
+    let installed = installService(binPath, dataDir)
+    if installed:
+      echo "  Registered as a systemd service (dootd) - persists across reboots"
+    else:
+      echo "  Note: Could not register systemd service (requires root)."
+      echo "  Service file content generated for manual installation."
+  else:
+    # Already initialized: show status
+    let state = loadState(db)
+    if statusOnly:
+      echo "  Service already running/configured."
+      echo "  Dashboard: http://localhost:" & $state.config.dashboardPort
+      echo "  Managed apps: " & $state.apps.len
+      echo "  Forgot password? Run: doot --prod --reset-password"
+      db.close()
+      return 0
+    echo "  Service already running/configured."
+    echo "  Dashboard: http://localhost:" & $state.config.dashboardPort
+    echo "  Forgot password? Run: doot --prod --reset-password"
+
+  # Initialize daemon components and start servers
+  var (dashboard, router, supervisor) = initDaemonState(db)
+
+  # Set up signal handler for graceful shutdown
+  gProdSupervisor = addr supervisor
+  gProdDashboard = addr dashboard
+  setControlCHook(handleProdSigint)
+
+  # Start async servers
+  echo ""
+  echo "Starting dootd servers..."
+  asyncCheck startDashboard(dashboard)
+  asyncCheck startRouter(router)
+
+  # Enter event loop
+  runForever()
+
+  # Clean up (unreachable in normal operation, signal handler calls quit)
+  db.close()
+  return 0
+
 proc dispatch*(cliArgs: CliArgs): int =
   ## Dispatch to the appropriate command handler.
   ## Returns the process exit code.
@@ -174,8 +299,7 @@ proc dispatch*(cliArgs: CliArgs): int =
       echo showHelp()
     return 0
   of cmdProd:
-    echo "Production mode is not yet implemented."
-    return 0
+    return runProd(cliArgs.flags)
   of cmdUnknown:
     let cmd = if cliArgs.args.len > 0: cliArgs.args[0] else: ""
     echo red("Error: ") & "Unknown command '" & cmd & "'."

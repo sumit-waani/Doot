@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-006",
+  "type": "fix",
+  "description": "Address 4 issues from v2 code review: (1) Stats page blocks event loop 100ms, (2) No HTML escaping (stored XSS), (3) Session expiry fallback accepts unparseable timestamps, (4) stopChild blocks event loop during redeploy.",
+  "status": "completed",
+  "steps": [
+    "Fix getCpuUsage() in dootd_stats.nim to use /proc/loadavg instead of sleep(100) delta sampling",
+    "Add escapeHtml helper to dootd_html.nim and apply to all user-controlled values",
+    "Fix validateSession in dootd_dashboard.nim to return false when timestamps are unparseable",
+    "Fix stopChild in dootd_process.nim to use waitForExit(timeout) instead of polling loop with sleep"
+  ],
+  "acceptance_criteria": [
+    "getCpuUsage() does not call sleep() or any blocking operation",
+    "All user-controlled HTML interpolations use escapeHtml",
+    "validateSession returns false when expires_at is unparseable",
+    "stopChild does not use sleep() in a polling loop",
+    "All 236 dootd tests still pass",
+    "All 82 CLI tests still pass",
+    "nim c src/doot.nim compiles cleanly"
+  ],
+  "verification": [
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c src/doot.nim",
+    "export PATH=/root/.nimble/bin:$PATH && cd /projects/sandbox/Doot && nim c --threads:on --mm:orc --passL:-largon2 --passL:-lssl --passL:-lcrypto -r tests/test_dootd.nim"
+  ],
+  "blocked_reason": null,
+  "findings": "All 4 fixes applied cleanly. getCpuUsage now reads /proc/loadavg for 1-min load average normalized by CPU count (no blocking). escapeHtml replaces &, <, >, and \" in all user-controlled template values including app names, hostnames, log messages, branch names, URLs, filter inputs, and page titles. validateSession inner except now returns false instead of falling through. stopChild uses process.waitForExit(timeout=timeoutMs) followed by a kill if still running, eliminating the sleep(100) polling loop. Build compiles cleanly with no warnings. All 236 dootd tests and 82 CLI tests pass."
+}
